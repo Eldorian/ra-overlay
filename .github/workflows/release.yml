@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish win-x64
+        run: |
+          dotnet publish RaOverlay.Desktop -c Release -r win-x64 `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:PublishTrimmed=false `
+            -p:SelfContained=true
+      - name: Zip artifact
+        shell: pwsh
+        run: |
+          $pub = "RaOverlay.Desktop/bin/Release/net8.0-windows/win-x64/publish"
+          Compress-Archive -Path "$pub/*" -DestinationPath "RaOverlay-win-x64.zip"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RaOverlay-win-x64
+          path: RaOverlay-win-x64.zip
+
+  release:
+    needs: build-win
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: RaOverlay-win-x64
+          path: .
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            RaOverlay-win-x64.zip

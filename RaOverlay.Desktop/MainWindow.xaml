@@ -1,0 +1,107 @@
+﻿<Window x:Class="RaOverlay.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="RA Overlay" Width="760" Height="560" WindowStartupLocation="CenterScreen">
+  <Grid Margin="14">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <!-- Credentials -->
+    <GroupBox Header="RetroAchievements" Margin="0,0,0,10">
+      <Grid Margin="10">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <TextBlock Text="Username" VerticalAlignment="Center"/>
+        <TextBox x:Name="UserBox" Grid.Column="1" Margin="8,0" MinWidth="160" TextChanged="TextChanged_UpdateUrl"/>
+
+        <TextBlock Grid.Column="2" Text="Web API Key" VerticalAlignment="Center" Margin="16,0,0,0"/>
+        <PasswordBox x:Name="KeyBox" Grid.Column="3" Margin="8,0" MinWidth="260" PasswordChanged="PasswordChanged_UpdateUrl"/>
+
+        <TextBlock Grid.Column="4" Text="Port" VerticalAlignment="Center" Margin="16,0,0,0"/>
+        <TextBox x:Name="PortBox" Grid.Column="5" Margin="8,0" Width="70" Text="4050" TextChanged="TextChanged_UpdateUrl"/>
+      </Grid>
+    </GroupBox>
+
+    <!-- Options -->
+    <GroupBox Header="Overlay Options" Grid.Row="1" Margin="0,0,0,10">
+      <Grid Margin="10">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Position"/>
+        <ComboBox x:Name="PosBox" Grid.Column="1" Margin="8,0" SelectionChanged="SelectionChanged_UpdateUrl">
+          <ComboBoxItem Content="tl" IsSelected="True"/>
+          <ComboBoxItem Content="tr"/>
+          <ComboBoxItem Content="bl"/>
+          <ComboBoxItem Content="br"/>
+        </ComboBox>
+
+        <TextBlock Grid.Column="2" Text="Opacity"/>
+        <Slider x:Name="Alpha" Grid.Column="3" Minimum="0" Maximum="1" Value="0.75"
+                TickFrequency="0.05" IsSnapToTickEnabled="True" ValueChanged="SliderChanged_UpdateUrl"/>
+
+        <TextBlock Grid.Column="4" Text="Blur(px)"/>
+        <Slider x:Name="Blur" Grid.Column="5" Minimum="0" Maximum="20" Value="8"
+                TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliderChanged_UpdateUrl"/>
+
+        <TextBlock Grid.Column="6" Text="Scale"/>
+        <Slider x:Name="Scale" Grid.Column="7" Minimum="0.6" Maximum="1.4" Value="1.0"
+                TickFrequency="0.05" IsSnapToTickEnabled="True" ValueChanged="SliderChanged_UpdateUrl"/>
+
+        <TextBlock Grid.Row="1" Text="Min Width"/>
+        <TextBox x:Name="MinWidthBox" Grid.Row="1" Grid.Column="1" Margin="8,0" Width="80"
+                 Text="560" TextChanged="TextChanged_UpdateUrl"/>
+
+        <TextBlock Grid.Row="1" Grid.Column="2" Text="Background RGB"/>
+        <TextBox x:Name="RgbBox" Grid.Row="1" Grid.Column="3" Margin="8,0"
+                 Text="32,34,38" TextChanged="TextChanged_UpdateUrl"/>
+
+        <TextBlock Grid.Row="1" Grid.Column="4" Text="Next Sort"/>
+        <ComboBox x:Name="SortBox" Grid.Row="1" Grid.Column="5" Margin="8,0" SelectionChanged="SelectionChanged_UpdateUrl">
+          <ComboBoxItem Content="list" IsSelected="True"/>
+          <ComboBoxItem Content="points-asc"/>
+          <ComboBoxItem Content="points-desc"/>
+        </ComboBox>
+
+        <Button x:Name="SoundBtn" Grid.Row="1" Grid.Column="6" Content="Choose Sound…" Margin="8,0" Click="SoundBtn_Click"/>
+        <TextBlock x:Name="SoundLabel" Grid.Row="1" Grid.Column="7" Text="unlock.mp3" VerticalAlignment="Center"/>
+      </Grid>
+    </GroupBox>
+
+    <!-- URL + actions -->
+    <StackPanel Grid.Row="2" Orientation="Vertical" Margin="0,0,0,10">
+      <TextBlock Text="OBS Browser Source URL:" FontWeight="Bold"/>
+      <TextBox x:Name="UrlBox" Margin="0,6,0,0" FontFamily="Consolas" FontSize="14" IsReadOnly="True"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button Content="Start" Width="90" Margin="6,0" Click="Start_Click"/>
+      <Button Content="Stop" Width="90" Margin="6,0" Click="Stop_Click"/>
+      <Button Content="Copy URL" Width="100" Margin="6,0" Click="Copy_Click"/>
+      <Button Content="Open" Width="80" Margin="6,0" Click="Open_Click"/>
+    </StackPanel>
+  </Grid>
+</Window>

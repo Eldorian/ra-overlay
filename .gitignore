@@ -1,0 +1,26 @@
+# Build output
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.ide/
+
+# VS Code
+.vscode/
+
+# Rider / ReSharper
+.idea/
+_ReSharper.Caches/
+
+# Publish artifacts
+**/publish/
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+raoverlay-crash.txt

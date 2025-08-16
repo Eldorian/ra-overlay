@@ -1,0 +1,201 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>RA Overlay</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --panel-rgb: 32,34,38;
+      --panel-alpha: .70;
+      --blur: 8px;
+      --corner: 16px;
+      --fg: #fff;
+      --accent: #00e0a5;
+      --shadow: 0 14px 44px rgba(0,0,0,.40);
+    }
+    *{ box-sizing: border-box }
+    body{ margin:0; font-family: ui-sans-serif, system-ui, Segoe UI, Roboto, Helvetica, Arial; color: var(--fg); }
+    .wrap{ position: absolute; inset: 0; pointer-events: none; }
+
+    .card{
+      position:absolute; top:20px; left:20px;
+      display:grid; grid-template-rows:auto auto; gap:10px;
+      background: rgba(var(--panel-rgb), var(--panel-alpha));
+      -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur));
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: var(--corner);
+      box-shadow: var(--shadow);
+      padding:12px 14px;
+      min-width:520px;
+    }
+    .header{ position:relative; display:flex; gap:12px; align-items:center; }
+    .boxart{ width:64px; height:64px; object-fit:cover; border-radius:10px; box-shadow:0 6px 18px rgba(0,0,0,.35); }
+    .title{ font-weight:800; line-height:1.05; text-shadow:0 2px 6px rgba(0,0,0,.65) }
+    .sub{ opacity:.9; font-size:12px; margin-top:2px; text-shadow:0 2px 6px rgba(0,0,0,.6) }
+    .bar{ width:320px; background:rgba(255,255,255,.18); height:8px; border-radius:999px; overflow:hidden; margin-top:8px; }
+    .bar>div{ height:100%; width:0%; background:var(--accent); transition: width .6s ease; }
+
+    .nextpill{
+      position:absolute; right:8px; top:-14px; transform: translateY(-50%);
+      display:flex; align-items:center; gap:10px;
+      background: rgba(var(--panel-rgb), calc(var(--panel-alpha)+.05));
+      -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur));
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius:14px; padding:8px 10px; box-shadow: var(--shadow);
+    }
+    .nextpill img{ width:28px; height:28px; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,.3) }
+    .nextpill .label{ font-size:11px; opacity:.85 }
+    .nextpill .name{ font-weight:700 }
+
+    .remaining{ display:flex; gap:8px; flex-wrap:wrap; max-width:900px; }
+    .chip{
+      background: rgba(var(--panel-rgb), var(--panel-alpha));
+      -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur));
+      border: 1px solid rgba(255,255,255,.08);
+      padding:6px 8px; border-radius:999px; font-size:12px; display:flex; gap:6px; align-items:center;
+      box-shadow:0 8px 24px rgba(0,0,0,.25);
+    }
+    .chip img{ width:16px; height:16px; border-radius:3px; }
+
+    .toasts{ position:absolute; bottom:20px; left:20px; display:flex; flex-direction:column; gap:10px; }
+    .toast{ display:flex; gap:10px; align-items:center;
+      background: rgba(var(--panel-rgb), var(--panel-alpha));
+      -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur));
+      border: 1px solid rgba(255,255,255,.10); padding:10px 12px; border-radius:12px;
+      transform: translateY(20px); opacity:0; box-shadow: var(--shadow); animation: slidein .25s ease forwards; }
+    .toast img{ width:42px; height:42px; border-radius:6px; box-shadow:0 6px 16px rgba(0,0,0,.35) }
+    .toast .name{ font-weight:700 }
+    .toast .meta{ font-size:12px; opacity:.9 }
+    @keyframes slidein{ to{ transform: translateY(0); opacity:1 } }
+    @keyframes slideout{ to{ transform: translateY(10px); opacity:0 } }
+    .strike{ text-decoration: line-through; opacity:.6; transition: opacity .3s ease; }
+
+    .err{ position:absolute; top:8px; left:8px; font:12px/1.2 ui-sans-serif,system-ui; color:#ffb3b3; opacity:.9 }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" id="card">
+      <div class="header">
+        <img class="boxart" id="boxart"/>
+        <div>
+          <div class="title" id="title">Waiting for game…</div>
+          <div class="sub" id="sub">—</div>
+          <div class="bar"><div id="barfill"></div></div>
+        </div>
+        <div class="nextpill" id="nextPill" style="display:none">
+          <img id="nextBadge"/>
+          <div>
+            <div class="label">Next up</div>
+            <div class="name" id="nextTitle"></div>
+          </div>
+        </div>
+      </div>
+      <div class="remaining" id="remaining"></div>
+    </div>
+
+    <div class="toasts" id="toasts"></div>
+    <div class="err" id="err" style="display:none"></div>
+  </div>
+
+  <audio id="ding" src="/unlock.mp3" preload="auto"></audio>
+  <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8/dist/browser/signalr.min.js"></script>
+  <script>
+    const qs = new URLSearchParams(location.search);
+    const card = document.getElementById('card');
+    const alpha = parseFloat(qs.get('alpha') || '0.70');
+    const blur = (qs.get('blur') || '8') + (/\d$/.test(qs.get('blur') || '') ? 'px' : '');
+    const bg = qs.get('bg') || '32,34,38';
+    const scale = parseFloat(qs.get('scale') || '1');
+    const width = parseInt(qs.get('width') || '0', 10);
+    const pos = (qs.get('pos') || 'tl').toLowerCase();
+    document.documentElement.style.setProperty('--panel-alpha', String(Math.max(0, Math.min(1, alpha))));
+    document.documentElement.style.setProperty('--blur', blur);
+    document.documentElement.style.setProperty('--panel-rgb', bg);
+    if (scale !== 1) card.style.transform = `scale(${scale})`;
+    if (width > 0) card.style.minWidth = width + 'px';
+    card.style.top = card.style.bottom = card.style.left = card.style.right = 'auto';
+    if (pos.includes('t')) card.style.top = '20px'; else card.style.bottom = '20px';
+    if (pos.includes('l')) card.style.left = '20px'; else card.style.right = '20px';
+
+    const enableSound = qs.get('sound') !== '0';
+    const title = document.getElementById('title');
+    const sub = document.getElementById('sub');
+    const box = document.getElementById('boxart');
+    const bar = document.getElementById('barfill');
+    const rem = document.getElementById('remaining');
+    const toasts = document.getElementById('toasts');
+    const nextPill = document.getElementById('nextPill');
+    const nextBadge = document.getElementById('nextBadge');
+    const nextTitle = document.getElementById('nextTitle');
+    const ding = document.getElementById('ding');
+    const err = document.getElementById('err');
+
+    let nowPlayingGameId = null;
+    let currentNext = null;
+
+    function setProgress(pct, earned, total){
+      bar.style.width = (pct || 0) + '%';
+      sub.textContent = `${earned ?? 0}/${total ?? 0} achievements • ${pct ?? 0}%`;
+    }
+
+    const connection = new signalR.HubConnectionBuilder()
+      .withUrl("/overlayhub")
+      .withAutomaticReconnect()
+      .build();
+
+    connection.on("now-playing", (data) => {
+      nowPlayingGameId = data.gameId ?? null;
+      title.textContent = `${data.title} (${data.consoleName})`;
+      if (data.boxArt) { box.src = data.boxArt; box.style.display = "block"; }
+      setProgress(data.percent, data.earned, data.total);
+    });
+
+    connection.on("progress", (p) => setProgress(p.percent, p.earned, p.total));
+
+    connection.on("remaining", ({ remaining }) => {
+      rem.innerHTML = "";
+      (remaining || []).slice(0, 12).forEach(a => {
+        const el = document.createElement("div");
+        el.className = "chip";
+        if (a.badge) { const img = document.createElement("img"); img.src = a.badge; el.appendChild(img); }
+        const label = document.createElement("span");
+        label.textContent = a.title;
+        label.dataset.achid = a.id;
+        el.appendChild(label);
+        rem.appendChild(el);
+      });
+    });
+
+    connection.on("next", (nxt) => {
+      currentNext = nxt || null;
+      if (!nxt) { nextPill.style.display = 'none'; return; }
+      nextPill.style.display = 'flex';
+      nextTitle.textContent = nxt.title + (nxt.points ? ` • ${nxt.points} pts` : '');
+      if (nxt.badge) { nextBadge.src = nxt.badge; nextBadge.style.display = 'block'; } else { nextBadge.style.display = 'none'; }
+    });
+
+    connection.on("achievement", (a) => {
+      if (enableSound && (!nowPlayingGameId || a.gameId === nowPlayingGameId)) {
+        try { ding.currentTime = 0; ding.play(); } catch {}
+      }
+      const el = document.createElement("div");
+      el.className = "toast";
+      const img = document.createElement("img");
+      if (a.badge) img.src = a.badge;
+      const text = document.createElement("div");
+      text.innerHTML = `<div class="name">${a.title} ${a.hardcore ? "💀" : ""}</div><div class="meta">${a.gameTitle} • ${a.points} pts</div>`;
+      el.appendChild(img); el.appendChild(text); toasts.appendChild(el);
+      setTimeout(() => { el.style.animation = "slideout .25s ease forwards"; setTimeout(() => el.remove(), 300); }, 6000);
+      if (currentNext && a.id === currentNext.id) { nextTitle.classList.add('strike'); setTimeout(() => nextTitle.classList.remove('strike'), 1200); }
+    });
+
+    connection.start().catch(e=>{
+      err.style.display='block';
+      err.textContent='Failed to connect to overlay hub. Is the desktop app running?';
+      console.error(e);
+    });
+  </script>
+</body>
+</html>
