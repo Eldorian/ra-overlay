@@ -1,4 +1,6 @@
 name: Release
+permissions:
+  contents: write
 
 on:
   push:
@@ -6,40 +8,39 @@ on:
       - 'v*.*.*'
 
 jobs:
-  build-win:
+  win-x64:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Publish win-x64
+
+      - name: Publish (self-contained, single-file)
+        run: >
+          dotnet publish RaOverlay.Desktop -c Release -r win-x64
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:PublishTrimmed=false
+          -p:SelfContained=true
+
+      - name: Show publish dir (sanity)
+        shell: pwsh
         run: |
-          dotnet publish RaOverlay.Desktop -c Release -r win-x64 `
-            -p:PublishSingleFile=true `
-            -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:PublishTrimmed=false `
-            -p:SelfContained=true
-      - name: Zip artifact
+          $pub = "RaOverlay.Desktop/bin/Release/net8.0-windows/win-x64/publish"
+          echo "Publish dir: $pub"
+          Get-ChildItem $pub
+
+      - name: Zip published app
         shell: pwsh
         run: |
           $pub = "RaOverlay.Desktop/bin/Release/net8.0-windows/win-x64/publish"
           Compress-Archive -Path "$pub/*" -DestinationPath "RaOverlay-win-x64.zip"
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: RaOverlay-win-x64
-          path: RaOverlay-win-x64.zip
+          Get-ChildItem RaOverlay-win-x64.zip | Format-List
 
-  release:
-    needs: build-win
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: RaOverlay-win-x64
-          path: .
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            RaOverlay-win-x64.zip
+          files: RaOverlay-win-x64.zip
+          make_latest: true
