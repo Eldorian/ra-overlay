@@ -49,7 +49,7 @@ public partial class MainWindow : System.Windows.Window
 
     private OverlaySettings ReadSettingsFromUi()
     {
-        var s = new OverlaySettings
+        return new OverlaySettings
         {
             Username = UserBox?.Text?.Trim() ?? "",
             ApiKeyCipher = SettingsStore.Protect(KeyBox?.Password?.Trim() ?? ""),
@@ -62,11 +62,10 @@ public partial class MainWindow : System.Windows.Window
             MinWidth = int.TryParse(MinWidthBox?.Text, out var mw) ? mw : 560,
             BackgroundRgb = (RgbBox?.Text ?? "32,34,38").Trim(),
             NextSort = GetCombo(SortBox) ?? "list",
-            Layout = GetCombo(LayoutBox) ?? "horizontal",
+            Layout   = GetCombo(LayoutBox) ?? "horizontal",
 
             SoundPath = _soundPath
         };
-        return s;
     }
 
     private void SaveSettings()
@@ -81,7 +80,7 @@ public partial class MainWindow : System.Windows.Window
     {
         Username  = UserBox?.Text?.Trim() ?? "",
         WebApiKey = KeyBox?.Password?.Trim() ?? "",
-        PollSeconds = 10,
+        PollSeconds = 5,                         // faster/more responsive
         NextSort  = GetCombo(SortBox) ?? "list"
     };
 
@@ -123,11 +122,8 @@ public partial class MainWindow : System.Windows.Window
     {
         try
         {
-            var www = Path.Combine(AppContext.BaseDirectory, "wwwroot");
-            Directory.CreateDirectory(www);
-
-            if (!string.IsNullOrEmpty(_soundPath) && File.Exists(_soundPath))
-                File.Copy(_soundPath, Path.Combine(www, "unlock.mp3"), overwrite: true);
+            // ensure wwwroot exists + copy sound if chosen
+            CopySoundIntoWebRoot();
 
             if (_server is not null)
             {
@@ -196,6 +192,9 @@ public partial class MainWindow : System.Windows.Window
             _soundPath = dlg.FileName;
             if (SoundLabel is not null)
                 SoundLabel.Text = Path.GetFileName(_soundPath);
+
+            // copy immediately so /unlock.mp3 is available without restart
+            CopySoundIntoWebRoot();
             SaveSettings();
         }
     }
@@ -213,18 +212,6 @@ public partial class MainWindow : System.Windows.Window
     private void SliderChanged_UpdateUrl(object? s, System.Windows.RoutedPropertyChangedEventArgs<double> e)
     { if (_uiReady) { UpdateUrl(); SaveSettings(); } }
 
-    // graceful teardown
-    protected override async void OnClosed(EventArgs e)
-    {
-        base.OnClosed(e);
-        SaveSettings();
-        if (_server is not null)
-        {
-            try { await _server.StopAsync(); await _server.DisposeAsync(); } catch { }
-            _server = null;
-        }
-    }
-
     // ---------- small UI helpers ----------
     private static void SelectCombo(System.Windows.Controls.ComboBox box, string value)
     {
@@ -240,4 +227,28 @@ public partial class MainWindow : System.Windows.Window
         => (box?.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content?.ToString();
 
     private static double Clamp(double v, double min, double max) => v < min ? min : (v > max ? max : v);
+
+    private void CopySoundIntoWebRoot()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(_soundPath) || !File.Exists(_soundPath)) return;
+            var www = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+            Directory.CreateDirectory(www);
+            File.Copy(_soundPath, Path.Combine(www, "unlock.mp3"), overwrite: true);
+        }
+        catch { /* ignore or log if you want */ }
+    }
+
+    // graceful teardown
+    protected override async void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+        SaveSettings();
+        if (_server is not null)
+        {
+            try { await _server.StopAsync(); await _server.DisposeAsync(); } catch { }
+            _server = null;
+        }
+    }
 }

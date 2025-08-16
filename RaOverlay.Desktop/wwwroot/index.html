@@ -13,11 +13,12 @@
       --alpha: .75;
       --blur: 8px;
       --bg: 32, 34, 38;
+      /* r,g,b */
       --scale: 1;
       --minw: 560px;
-      /* horizontal mode */
+      /* horizontal min width */
       --vwidth: 240px;
-      /* NEW: vertical column width */
+      /* vertical column width (clamped) */
       --pad: 8px;
     }
 
@@ -38,7 +39,6 @@
 
     /* default: bottom-left */
 
-    /* corner positions from ?pos=tl|tr|bl|br */
     .pos-tl {
       top: 0;
       left: 0;
@@ -67,7 +67,6 @@
       top: auto
     }
 
-    /* glass card */
     .panel {
       --round: 14px;
       background: rgba(var(--bg), var(--alpha));
@@ -82,7 +81,7 @@
       padding: var(--pad);
     }
 
-    /* LAYOUTS */
+    /* layouts */
     #stack.horizontal {
       display: flex;
       flex-direction: column;
@@ -91,12 +90,12 @@
       max-width: calc(var(--minw) + 480px);
     }
 
-    /* Vertical is FLUID: fills the Browser Source area */
     #stack.vertical {
       display: flex;
       flex-direction: column;
       gap: 8px;
       width: min(100vw, var(--vwidth));
+      /* clamp to pillar width */
       height: 100vh;
     }
 
@@ -195,15 +194,14 @@
       border-radius: 6px
     }
 
-    /* vertical mode specifics */
+    /* vertical specifics */
     #stack.vertical .header,
     #stack.vertical .next,
-    #stack.vetical .chips {
+    #stack.vertical .chips {
       width: 100%;
     }
 
     #stack.vertical .chips {
-      /* make chips area take the remaining height and scroll */
       flex: 1 1 auto;
       overflow-y: auto;
       flex-direction: column;
@@ -216,21 +214,25 @@
       justify-content: flex-start;
     }
 
-    body.vertical .toast.top,
-    body.vertical .toast.bottom {
-      left: var(--pad);
-      transform: none;
-      max-width: var(--vwidth);
-    }
-
-    /* unlock toast */
+    /* unlock toast: top (horizontal) vs bottom (vertical) */
     .toast {
       position: fixed;
       transition: top .35s ease, bottom .35s ease;
       max-width: 560px;
     }
 
-    /* default (horizontal) */
+    .toast .body {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+    }
+
+    .toast .pts {
+      opacity: .85;
+      font-size: 12px
+    }
+
     .toast.top {
       left: 50%;
       transform: translateX(-50%);
@@ -241,7 +243,6 @@
       top: 12px;
     }
 
-    /* vertical = BOTTOM */
     .toast.bottom {
       left: 50%;
       transform: translateX(-50%);
@@ -252,35 +253,15 @@
       bottom: 12px;
     }
 
-    .toast .body {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      padding: 10px 12px;
+    /* keep toast inside the pillar when vertical */
+    body.vertical .toast.top,
+    body.vertical .toast.bottom {
+      left: var(--pad);
+      transform: none;
+      max-width: var(--vwidth);
     }
 
-    .toast .pts {
-      opacity: .85;
-      font-size: 12px
-    }
-
-    .toast.show {
-      top: 12px;
-    }
-
-    .toast .body {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      padding: 10px 12px;
-    }
-
-    .toast .pts {
-      opacity: .85;
-      font-size: 12px
-    }
-
-    /* COMPACT for narrow pillars (auto) */
+    /* compact for very narrow pillars */
     @media (max-width: 260px) {
       .header {
         grid-template-columns: 44px 1fr;
@@ -298,8 +279,7 @@
       }
 
       .sub {
-        font-size: 11px;
-        opacity: .8
+        font-size: 11px
       }
 
       .bar-wrap {
@@ -358,7 +338,7 @@
     </div>
   </div>
 
-  <div class="toast" id="toast">
+  <div class="toast top" id="toast">
     <div class="panel body">
       <div class="badge" id="tBadge"></div>
       <div>
@@ -368,6 +348,9 @@
     </div>
   </div>
 
+  <!-- preloaded, absolute path for reliability -->
+  <audio id="sfx" src="/unlock.mp3" preload="auto"></audio>
+
   <script>
     // ---- query params ----
     const q = new URLSearchParams(location.search);
@@ -376,20 +359,17 @@
     const blur = parseInt(q.get('blur') || '8', 10);
     const bg = (q.get('bg') || '32,34,38');
     const scale = parseFloat(q.get('scale') || '1');
-    const minW = parseInt(q.get('width') || '560', 10); // used by horizontal
+    const minW = parseInt(q.get('width') || '560', 10); // horizontal min width
     const layout = (q.get('layout') || 'horizontal').toLowerCase();
-
     const vwidth = parseInt(q.get('vwidth') || q.get('width') || '240', 10);
-    document.documentElement.style.setProperty('--vwidth', vwidth + 'px');
-
-    document.body.classList.toggle('vertical', layout === 'vertical');
-
+    const maxChips = parseInt(q.get('max') || (layout === 'vertical' ? '40' : '8'), 10);
 
     document.documentElement.style.setProperty('--alpha', alpha);
     document.documentElement.style.setProperty('--blur', blur + 'px');
     document.documentElement.style.setProperty('--bg', bg);
     document.documentElement.style.setProperty('--scale', scale);
     document.documentElement.style.setProperty('--minw', minW + 'px');
+    document.documentElement.style.setProperty('--vwidth', vwidth + 'px');
 
     const root = document.getElementById('root');
     root.classList.remove('pos-tl', 'pos-tr', 'pos-bl', 'pos-br');
@@ -399,9 +379,11 @@
     stack.classList.remove('horizontal', 'vertical');
     stack.classList.add(layout); // horizontal | vertical
 
+    // toast position & body class for vertical
     const toastEl = document.getElementById('toast');
     toastEl.classList.remove('top', 'bottom');
     toastEl.classList.add(layout === 'vertical' ? 'bottom' : 'top');
+    document.body.classList.toggle('vertical', layout === 'vertical');
 
     // ---- UI helpers ----
     const $ = s => document.querySelector(s);
@@ -418,15 +400,18 @@
       $('#pct').textContent = pct;
       $('#bar').style.width = pct + '%';
     }
-    function setRemaining(list) {
+    function setRemaining(listOrPayload) {
+      const list = (listOrPayload?.remaining || listOrPayload || []);
+      const show = list.slice(0, maxChips); 
+      const chips = document.getElementById('chips');
       chips.innerHTML = '';
-      (list?.remaining || list || []).forEach(a => {
+      show.forEach(a => {
         const el = document.createElement('div');
         el.className = 'chip';
         el.innerHTML = `
-        <div class="badge" style="background-image:url('${a.badge || ''}')"></div>
-        <div class="name">${a.title}</div>
-      `;
+      <div class="badge" style="background-image:url('${a.badge || ''}')"></div>
+      <div class="name">${a.title}</div>
+    `;
         chips.appendChild(el);
       });
     }
@@ -438,16 +423,27 @@
       $('#nextPts').textContent = n.points ? `• ${n.points} pts` : '';
       wrap.style.display = '';
     }
+
+    // sound helper (reliable/overlapping)
+    const sfx = document.getElementById('sfx');
+    function playSfx() {
+      if (!sfx) return;
+      try {
+        const a = sfx.cloneNode(true);
+        a.play().catch(() => { });
+      } catch { }
+    }
+
     let toastTimer;
     function showToast(a) {
       $('#tBadge').style.backgroundImage = a.badge ? `url("${a.badge}")` : 'none';
       $('#tName').textContent = a.title || 'Achievement unlocked!';
       $('#tPts').textContent = a.points ? `${a.points} pts` : '';
-      const t = $('#toast');
+      const t = document.getElementById('toast');
       t.classList.add('show');
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
-      new Audio('unlock.mp3').play().catch(() => { });
+      playSfx();
     }
 
     // ---- SignalR ----
