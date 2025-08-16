@@ -1,201 +1,469 @@
 <!doctype html>
-<html>
+<html lang="en">
+
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>RA Overlay</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@7.0.14/dist/browser/signalr.min.js"></script>
+
   <style>
-    :root{
-      --panel-rgb: 32,34,38;
-      --panel-alpha: .70;
+    :root {
+      --alpha: .75;
       --blur: 8px;
-      --corner: 16px;
-      --fg: #fff;
-      --accent: #00e0a5;
-      --shadow: 0 14px 44px rgba(0,0,0,.40);
+      --bg: 32, 34, 38;
+      --scale: 1;
+      --minw: 560px;
+      /* horizontal mode */
+      --vwidth: 240px;
+      /* NEW: vertical column width */
+      --pad: 8px;
     }
-    *{ box-sizing: border-box }
-    body{ margin:0; font-family: ui-sans-serif, system-ui, Segoe UI, Roboto, Helvetica, Arial; color: var(--fg); }
-    .wrap{ position: absolute; inset: 0; pointer-events: none; }
 
-    .card{
-      position:absolute; top:20px; left:20px;
-      display:grid; grid-template-rows:auto auto; gap:10px;
-      background: rgba(var(--panel-rgb), var(--panel-alpha));
-      -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur));
-      border: 1px solid rgba(255,255,255,.08);
-      border-radius: var(--corner);
-      box-shadow: var(--shadow);
-      padding:12px 14px;
-      min-width:520px;
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      overflow: hidden;
+      font-family: system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      color: #f3f4f6
     }
-    .header{ position:relative; display:flex; gap:12px; align-items:center; }
-    .boxart{ width:64px; height:64px; object-fit:cover; border-radius:10px; box-shadow:0 6px 18px rgba(0,0,0,.35); }
-    .title{ font-weight:800; line-height:1.05; text-shadow:0 2px 6px rgba(0,0,0,.65) }
-    .sub{ opacity:.9; font-size:12px; margin-top:2px; text-shadow:0 2px 6px rgba(0,0,0,.6) }
-    .bar{ width:320px; background:rgba(255,255,255,.18); height:8px; border-radius:999px; overflow:hidden; margin-top:8px; }
-    .bar>div{ height:100%; width:0%; background:var(--accent); transition: width .6s ease; }
 
-    .nextpill{
-      position:absolute; right:8px; top:-14px; transform: translateY(-50%);
-      display:flex; align-items:center; gap:10px;
-      background: rgba(var(--panel-rgb), calc(var(--panel-alpha)+.05));
-      -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur));
-      border: 1px solid rgba(255,255,255,.10);
-      border-radius:14px; padding:8px 10px; box-shadow: var(--shadow);
+    .corner {
+      position: fixed;
+      inset: auto auto 0 0;
     }
-    .nextpill img{ width:28px; height:28px; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,.3) }
-    .nextpill .label{ font-size:11px; opacity:.85 }
-    .nextpill .name{ font-weight:700 }
 
-    .remaining{ display:flex; gap:8px; flex-wrap:wrap; max-width:900px; }
-    .chip{
-      background: rgba(var(--panel-rgb), var(--panel-alpha));
-      -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur));
-      border: 1px solid rgba(255,255,255,.08);
-      padding:6px 8px; border-radius:999px; font-size:12px; display:flex; gap:6px; align-items:center;
-      box-shadow:0 8px 24px rgba(0,0,0,.25);
+    /* default: bottom-left */
+
+    /* corner positions from ?pos=tl|tr|bl|br */
+    .pos-tl {
+      top: 0;
+      left: 0;
+      right: auto;
+      bottom: auto
     }
-    .chip img{ width:16px; height:16px; border-radius:3px; }
 
-    .toasts{ position:absolute; bottom:20px; left:20px; display:flex; flex-direction:column; gap:10px; }
-    .toast{ display:flex; gap:10px; align-items:center;
-      background: rgba(var(--panel-rgb), var(--panel-alpha));
-      -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur));
-      border: 1px solid rgba(255,255,255,.10); padding:10px 12px; border-radius:12px;
-      transform: translateY(20px); opacity:0; box-shadow: var(--shadow); animation: slidein .25s ease forwards; }
-    .toast img{ width:42px; height:42px; border-radius:6px; box-shadow:0 6px 16px rgba(0,0,0,.35) }
-    .toast .name{ font-weight:700 }
-    .toast .meta{ font-size:12px; opacity:.9 }
-    @keyframes slidein{ to{ transform: translateY(0); opacity:1 } }
-    @keyframes slideout{ to{ transform: translateY(10px); opacity:0 } }
-    .strike{ text-decoration: line-through; opacity:.6; transition: opacity .3s ease; }
+    .pos-tr {
+      top: 0;
+      right: 0;
+      left: auto;
+      bottom: auto
+    }
 
-    .err{ position:absolute; top:8px; left:8px; font:12px/1.2 ui-sans-serif,system-ui; color:#ffb3b3; opacity:.9 }
+    .pos-bl {
+      bottom: 0;
+      left: 0;
+      right: auto;
+      top: auto
+    }
+
+    .pos-br {
+      bottom: 0;
+      right: 0;
+      left: auto;
+      top: auto
+    }
+
+    /* glass card */
+    .panel {
+      --round: 14px;
+      background: rgba(var(--bg), var(--alpha));
+      backdrop-filter: blur(var(--blur));
+      border-radius: var(--round);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .05);
+    }
+
+    #root {
+      transform: scale(var(--scale));
+      transform-origin: top left;
+      padding: var(--pad);
+    }
+
+    /* LAYOUTS */
+    #stack.horizontal {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: var(--minw);
+      max-width: calc(var(--minw) + 480px);
+    }
+
+    /* Vertical is FLUID: fills the Browser Source area */
+    #stack.vertical {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: min(100vw, var(--vwidth));
+      height: 100vh;
+    }
+
+    /* header card */
+    .header {
+      display: grid;
+      grid-template-columns: 64px 1fr;
+      gap: 10px;
+      padding: 10px 12px;
+      align-items: center;
+    }
+
+    .box {
+      width: 64px;
+      height: 64px;
+      border-radius: 10px;
+      background: #111 center/cover no-repeat
+    }
+
+    .title {
+      font-weight: 700;
+      font-size: 15px;
+      line-height: 1.2
+    }
+
+    .sub {
+      opacity: .85;
+      font-size: 12px
+    }
+
+    .bar-wrap {
+      height: 8px;
+      background: rgba(255, 255, 255, .12);
+      border-radius: 999px;
+      margin-top: 8px
+    }
+
+    .bar {
+      height: 100%;
+      width: 0;
+      background: #22c55e;
+      border-radius: 999px;
+      transition: width .35s ease
+    }
+
+    /* next up */
+    .next {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px
+    }
+
+    .badge {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: #111 center/cover no-repeat;
+      flex: 0 0 28px
+    }
+
+    .next .label {
+      font-size: 13px;
+      opacity: .9
+    }
+
+    .next .name {
+      font-weight: 700
+    }
+
+    .next .pts {
+      opacity: .85;
+      font-size: 12px
+    }
+
+    /* chips */
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px;
+    }
+
+    .chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .08)
+    }
+
+    .chip .badge {
+      width: 20px;
+      height: 20px;
+      border-radius: 6px
+    }
+
+    /* vertical mode specifics */
+    #stack.vertical .header,
+    #stack.vertical .next,
+    #stack.vetical .chips {
+      width: 100%;
+    }
+
+    #stack.vertical .chips {
+      /* make chips area take the remaining height and scroll */
+      flex: 1 1 auto;
+      overflow-y: auto;
+      flex-direction: column;
+      flex-wrap: nowrap;
+      padding-right: 4px;
+    }
+
+    #stack.vertical .chip {
+      width: 100%;
+      justify-content: flex-start;
+    }
+
+    body.vertical .toast.top,
+    body.vertical .toast.bottom {
+      left: var(--pad);
+      transform: none;
+      max-width: var(--vwidth);
+    }
+
+    /* unlock toast */
+    .toast {
+      position: fixed;
+      transition: top .35s ease, bottom .35s ease;
+      max-width: 560px;
+    }
+
+    /* default (horizontal) */
+    .toast.top {
+      left: 50%;
+      transform: translateX(-50%);
+      top: -200px;
+    }
+
+    .toast.top.show {
+      top: 12px;
+    }
+
+    /* vertical = BOTTOM */
+    .toast.bottom {
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: -200px;
+    }
+
+    .toast.bottom.show {
+      bottom: 12px;
+    }
+
+    .toast .body {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+    }
+
+    .toast .pts {
+      opacity: .85;
+      font-size: 12px
+    }
+
+    .toast.show {
+      top: 12px;
+    }
+
+    .toast .body {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+    }
+
+    .toast .pts {
+      opacity: .85;
+      font-size: 12px
+    }
+
+    /* COMPACT for narrow pillars (auto) */
+    @media (max-width: 260px) {
+      .header {
+        grid-template-columns: 44px 1fr;
+        padding: 8px
+      }
+
+      .box {
+        width: 44px;
+        height: 44px;
+        border-radius: 8px
+      }
+
+      .title {
+        font-size: 13px
+      }
+
+      .sub {
+        font-size: 11px;
+        opacity: .8
+      }
+
+      .bar-wrap {
+        height: 6px
+      }
+
+      .next {
+        padding: 6px 8px
+      }
+
+      .badge {
+        width: 24px;
+        height: 24px;
+        border-radius: 6px
+      }
+
+      .chip {
+        padding: 4px 8px
+      }
+
+      .chip .badge {
+        width: 16px;
+        height: 16px
+      }
+
+      :root {
+        --pad: 6px;
+      }
+    }
   </style>
 </head>
+
 <body>
-  <div class="wrap">
-    <div class="card" id="card">
-      <div class="header">
-        <img class="boxart" id="boxart"/>
+  <div id="root" class="corner pos-tl">
+    <div id="stack" class="horizontal">
+      <div class="panel header" id="hdr">
+        <div class="box" id="box"></div>
         <div>
           <div class="title" id="title">Waiting for game…</div>
-          <div class="sub" id="sub">—</div>
-          <div class="bar"><div id="barfill"></div></div>
-        </div>
-        <div class="nextpill" id="nextPill" style="display:none">
-          <img id="nextBadge"/>
-          <div>
-            <div class="label">Next up</div>
-            <div class="name" id="nextTitle"></div>
+          <div class="sub"><span id="earned">0</span>/<span id="total">0</span> achievements • <span id="pct">0</span>%
+          </div>
+          <div class="bar-wrap">
+            <div class="bar" id="bar"></div>
           </div>
         </div>
       </div>
-      <div class="remaining" id="remaining"></div>
-    </div>
 
-    <div class="toasts" id="toasts"></div>
-    <div class="err" id="err" style="display:none"></div>
+      <div class="panel next" id="next" style="display:none">
+        <div class="badge" id="nextBadge"></div>
+        <div class="label">Next up</div>
+        <div class="name" id="nextName"></div>
+        <div class="pts" id="nextPts"></div>
+      </div>
+
+      <div class="panel chips" id="chips"></div>
+    </div>
   </div>
 
-  <audio id="ding" src="/unlock.mp3" preload="auto"></audio>
-  <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8/dist/browser/signalr.min.js"></script>
+  <div class="toast" id="toast">
+    <div class="panel body">
+      <div class="badge" id="tBadge"></div>
+      <div>
+        <div class="name" id="tName">Achievement unlocked!</div>
+        <div class="pts" id="tPts"></div>
+      </div>
+    </div>
+  </div>
+
   <script>
-    const qs = new URLSearchParams(location.search);
-    const card = document.getElementById('card');
-    const alpha = parseFloat(qs.get('alpha') || '0.70');
-    const blur = (qs.get('blur') || '8') + (/\d$/.test(qs.get('blur') || '') ? 'px' : '');
-    const bg = qs.get('bg') || '32,34,38';
-    const scale = parseFloat(qs.get('scale') || '1');
-    const width = parseInt(qs.get('width') || '0', 10);
-    const pos = (qs.get('pos') || 'tl').toLowerCase();
-    document.documentElement.style.setProperty('--panel-alpha', String(Math.max(0, Math.min(1, alpha))));
-    document.documentElement.style.setProperty('--blur', blur);
-    document.documentElement.style.setProperty('--panel-rgb', bg);
-    if (scale !== 1) card.style.transform = `scale(${scale})`;
-    if (width > 0) card.style.minWidth = width + 'px';
-    card.style.top = card.style.bottom = card.style.left = card.style.right = 'auto';
-    if (pos.includes('t')) card.style.top = '20px'; else card.style.bottom = '20px';
-    if (pos.includes('l')) card.style.left = '20px'; else card.style.right = '20px';
+    // ---- query params ----
+    const q = new URLSearchParams(location.search);
+    const pos = (q.get('pos') || 'tl').toLowerCase();
+    const alpha = parseFloat(q.get('alpha') || '0.75');
+    const blur = parseInt(q.get('blur') || '8', 10);
+    const bg = (q.get('bg') || '32,34,38');
+    const scale = parseFloat(q.get('scale') || '1');
+    const minW = parseInt(q.get('width') || '560', 10); // used by horizontal
+    const layout = (q.get('layout') || 'horizontal').toLowerCase();
 
-    const enableSound = qs.get('sound') !== '0';
-    const title = document.getElementById('title');
-    const sub = document.getElementById('sub');
-    const box = document.getElementById('boxart');
-    const bar = document.getElementById('barfill');
-    const rem = document.getElementById('remaining');
-    const toasts = document.getElementById('toasts');
-    const nextPill = document.getElementById('nextPill');
-    const nextBadge = document.getElementById('nextBadge');
-    const nextTitle = document.getElementById('nextTitle');
-    const ding = document.getElementById('ding');
-    const err = document.getElementById('err');
+    const vwidth = parseInt(q.get('vwidth') || q.get('width') || '240', 10);
+    document.documentElement.style.setProperty('--vwidth', vwidth + 'px');
 
-    let nowPlayingGameId = null;
-    let currentNext = null;
+    document.body.classList.toggle('vertical', layout === 'vertical');
 
-    function setProgress(pct, earned, total){
-      bar.style.width = (pct || 0) + '%';
-      sub.textContent = `${earned ?? 0}/${total ?? 0} achievements • ${pct ?? 0}%`;
+
+    document.documentElement.style.setProperty('--alpha', alpha);
+    document.documentElement.style.setProperty('--blur', blur + 'px');
+    document.documentElement.style.setProperty('--bg', bg);
+    document.documentElement.style.setProperty('--scale', scale);
+    document.documentElement.style.setProperty('--minw', minW + 'px');
+
+    const root = document.getElementById('root');
+    root.classList.remove('pos-tl', 'pos-tr', 'pos-bl', 'pos-br');
+    root.classList.add('pos-' + pos);
+
+    const stack = document.getElementById('stack');
+    stack.classList.remove('horizontal', 'vertical');
+    stack.classList.add(layout); // horizontal | vertical
+
+    const toastEl = document.getElementById('toast');
+    toastEl.classList.remove('top', 'bottom');
+    toastEl.classList.add(layout === 'vertical' ? 'bottom' : 'top');
+
+    // ---- UI helpers ----
+    const $ = s => document.querySelector(s);
+    const chips = $('#chips');
+
+    function setNowPlaying(payload) {
+      $('#title').textContent = `${payload.title} (${payload.consoleName})`;
+      $('#box').style.backgroundImage = payload.boxArt ? `url("${payload.boxArt}")` : 'none';
+    }
+    function setProgress(p) {
+      $('#earned').textContent = p.earned ?? 0;
+      $('#total').textContent = p.total ?? 0;
+      const pct = Math.max(0, Math.min(100, p.percent ?? 0));
+      $('#pct').textContent = pct;
+      $('#bar').style.width = pct + '%';
+    }
+    function setRemaining(list) {
+      chips.innerHTML = '';
+      (list?.remaining || list || []).forEach(a => {
+        const el = document.createElement('div');
+        el.className = 'chip';
+        el.innerHTML = `
+        <div class="badge" style="background-image:url('${a.badge || ''}')"></div>
+        <div class="name">${a.title}</div>
+      `;
+        chips.appendChild(el);
+      });
+    }
+    function setNext(n) {
+      const wrap = $('#next');
+      if (!n) { wrap.style.display = 'none'; return; }
+      $('#nextBadge').style.backgroundImage = n.badge ? `url("${n.badge}")` : 'none';
+      $('#nextName').textContent = n.title || '';
+      $('#nextPts').textContent = n.points ? `• ${n.points} pts` : '';
+      wrap.style.display = '';
+    }
+    let toastTimer;
+    function showToast(a) {
+      $('#tBadge').style.backgroundImage = a.badge ? `url("${a.badge}")` : 'none';
+      $('#tName').textContent = a.title || 'Achievement unlocked!';
+      $('#tPts').textContent = a.points ? `${a.points} pts` : '';
+      const t = $('#toast');
+      t.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
+      new Audio('unlock.mp3').play().catch(() => { });
     }
 
-    const connection = new signalR.HubConnectionBuilder()
-      .withUrl("/overlayhub")
+    // ---- SignalR ----
+    const hub = new signalR.HubConnectionBuilder()
+      .withUrl('/overlayhub')
       .withAutomaticReconnect()
       .build();
 
-    connection.on("now-playing", (data) => {
-      nowPlayingGameId = data.gameId ?? null;
-      title.textContent = `${data.title} (${data.consoleName})`;
-      if (data.boxArt) { box.src = data.boxArt; box.style.display = "block"; }
-      setProgress(data.percent, data.earned, data.total);
-    });
+    hub.on('now-playing', setNowPlaying);
+    hub.on('progress', setProgress);
+    hub.on('remaining', setRemaining);
+    hub.on('next', setNext);
+    hub.on('achievement', showToast);
 
-    connection.on("progress", (p) => setProgress(p.percent, p.earned, p.total));
-
-    connection.on("remaining", ({ remaining }) => {
-      rem.innerHTML = "";
-      (remaining || []).slice(0, 12).forEach(a => {
-        const el = document.createElement("div");
-        el.className = "chip";
-        if (a.badge) { const img = document.createElement("img"); img.src = a.badge; el.appendChild(img); }
-        const label = document.createElement("span");
-        label.textContent = a.title;
-        label.dataset.achid = a.id;
-        el.appendChild(label);
-        rem.appendChild(el);
-      });
-    });
-
-    connection.on("next", (nxt) => {
-      currentNext = nxt || null;
-      if (!nxt) { nextPill.style.display = 'none'; return; }
-      nextPill.style.display = 'flex';
-      nextTitle.textContent = nxt.title + (nxt.points ? ` • ${nxt.points} pts` : '');
-      if (nxt.badge) { nextBadge.src = nxt.badge; nextBadge.style.display = 'block'; } else { nextBadge.style.display = 'none'; }
-    });
-
-    connection.on("achievement", (a) => {
-      if (enableSound && (!nowPlayingGameId || a.gameId === nowPlayingGameId)) {
-        try { ding.currentTime = 0; ding.play(); } catch {}
-      }
-      const el = document.createElement("div");
-      el.className = "toast";
-      const img = document.createElement("img");
-      if (a.badge) img.src = a.badge;
-      const text = document.createElement("div");
-      text.innerHTML = `<div class="name">${a.title} ${a.hardcore ? "💀" : ""}</div><div class="meta">${a.gameTitle} • ${a.points} pts</div>`;
-      el.appendChild(img); el.appendChild(text); toasts.appendChild(el);
-      setTimeout(() => { el.style.animation = "slideout .25s ease forwards"; setTimeout(() => el.remove(), 300); }, 6000);
-      if (currentNext && a.id === currentNext.id) { nextTitle.classList.add('strike'); setTimeout(() => nextTitle.classList.remove('strike'), 1200); }
-    });
-
-    connection.start().catch(e=>{
-      err.style.display='block';
-      err.textContent='Failed to connect to overlay hub. Is the desktop app running?';
-      console.error(e);
-    });
+    hub.start().catch(err => console.error(err));
   </script>
 </body>
+
 </html>

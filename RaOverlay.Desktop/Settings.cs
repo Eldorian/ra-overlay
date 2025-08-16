@@ -8,18 +8,19 @@ namespace RaOverlay.Desktop;
 public sealed class OverlaySettings
 {
     public string Username { get; set; } = "";
-    public string ApiKeyCipher { get; set; } = "";           // DPAPI-protected
-    public int    Port { get; set; } = 4050;
+    public string ApiKeyCipher { get; set; } = "";              // DPAPI-protected
+    public int Port { get; set; } = 4050;   
+    
+    public string Position { get; set; } = "tl";                 // tl|tr|bl|br
+    public double Opacity { get; set; } = 0.75;                 // 0..1
+    public int Blur { get; set; } = 8;                          // px
+    public double Scale { get; set; } = 1.0;                    // 0.6..1.4
+    public int MinWidth { get; set; } = 560;                    // px
+    public string BackgroundRgb { get; set; } = "32,34,38";     // "r,g,b"
+    public string NextSort { get; set; } = "list";              // list|points-asc|points-desc
 
-    public string Position { get; set; } = "tl";              // tl|tr|bl|br
-    public double Opacity  { get; set; } = 0.75;              // 0..1
-    public int    Blur     { get; set; } = 8;                 // px
-    public double Scale    { get; set; } = 1.0;               // 0.6..1.4
-    public int    MinWidth { get; set; } = 560;               // px
-    public string BackgroundRgb { get; set; } = "32,34,38";   // "r,g,b"
-    public string NextSort { get; set; } = "list";            // list|points-asc|points-desc
-
-    public string? SoundPath { get; set; }                    // original mp3 path user picked
+    public string? SoundPath { get; set; }                      // original mp3 path user picked
+    public string Layout { get; set; } = "horizontal";          // "horizontal" | "vertical"
 }
 
 public static class SettingsStore

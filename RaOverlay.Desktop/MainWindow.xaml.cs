@@ -39,6 +39,7 @@ public partial class MainWindow : System.Windows.Window
         MinWidthBox.Text = s.MinWidth.ToString();
         RgbBox.Text = string.IsNullOrWhiteSpace(s.BackgroundRgb) ? "32,34,38" : s.BackgroundRgb;
         SelectCombo(SortBox, s.NextSort);
+        SelectCombo(LayoutBox, s.Layout);
 
         // Sound
         _soundPath = s.SoundPath ?? "";
@@ -61,6 +62,7 @@ public partial class MainWindow : System.Windows.Window
             MinWidth = int.TryParse(MinWidthBox?.Text, out var mw) ? mw : 560,
             BackgroundRgb = (RgbBox?.Text ?? "32,34,38").Trim(),
             NextSort = GetCombo(SortBox) ?? "list",
+            Layout = GetCombo(LayoutBox) ?? "horizontal",
 
             SoundPath = _soundPath
         };
@@ -94,6 +96,7 @@ public partial class MainWindow : System.Windows.Window
         var bg    = (RgbBox?.Text ?? "32,34,38").Trim();
         var scale = (Scale?.Value ?? 1.00).ToString("0.00");
         var width = (MinWidthBox?.Text ?? "560").Trim();
+        var layout = GetCombo(LayoutBox) ?? "horizontal";
 
         var baseUrl = _server?.BaseUrl ?? $"http://localhost:{ReadPort()}";
 
@@ -110,6 +113,7 @@ public partial class MainWindow : System.Windows.Window
         add("bg",    bg);
         add("scale", scale);
         add("width", width);
+        add("layout", layout);
 
         if (UrlBox is not null) UrlBox.Text = $"{baseUrl}/overlay{qs}";
     }

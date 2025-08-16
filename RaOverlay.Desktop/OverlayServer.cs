@@ -83,7 +83,7 @@ public record RaOptions
 {
     public string Username { get; init; } = string.Empty;
     public string WebApiKey { get; init; } = string.Empty;
-    public int PollSeconds { get; init; } = 10;
+    public int PollSeconds { get; init; } = 5;
     public string NextSort { get; init; } = "list"; // list | points-asc | points-desc
 }
 
