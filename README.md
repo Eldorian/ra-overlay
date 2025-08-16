@@ -1,8 +1,8 @@
 # RA Overlay (RetroAchievements → OBS)
 
-[![Latest release](https://img.shields.io/github/v/release/<OWNER>/<REPO>?display_name=release&sort=semver)](../../releases/latest)
-[![Downloads (latest)](https://img.shields.io/github/downloads/<OWNER>/<REPO>/latest/total)](../../releases/latest)
-[![Downloads (total)](https://img.shields.io/github/downloads/<OWNER>/<REPO>/total)](../../releases)
+[![Latest release](https://img.shields.io/github/v/release/Eldorian/ra-overlay?display_name=release&sort=semver)](../../releases/latest)
+[![Downloads (latest)](https://img.shields.io/github/downloads/Eldorian/ra-overlay/latest/total)](../../releases/latest)
+[![Downloads (total)](https://img.shields.io/github/downloads/Eldorian/ra-overlay/total)](../../releases)
 
 A tiny **.NET 8 (WPF)** desktop app that hosts a local web overlay for OBS and pulls your **RetroAchievements** activity:
 
