@@ -1,8 +1,13 @@
+using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -74,12 +79,156 @@ namespace RaOverlay.Desktop
                 await ctx.Response.SendFileAsync(path, ctx.RequestAborted);
             });
 
-            // ---- Ping toast test ----
+            // Ping toast test
             _app.MapGet("/__ping_toast", async (IHubContext<OverlayHub> hub) =>
             {
                 var payload = new { title = "Ping Toast", points = 5, badge = (string?)null };
                 await hub.Clients.All.SendAsync("achievement", payload);
                 return Results.Ok("sent");
+            });
+
+            // -------- Control API --------
+
+            // JSON for the control page
+            _app.MapGet("/control/data", (OverlayState s) =>
+            {
+                var sel = s.GetSelected();
+                return Results.Json(new
+                {
+                    game = s.NowPlaying,
+                    manual = s.ManualIndex is not null,
+                    selectedId = sel?.Id,
+                    remaining = s.RemainingList.Select(a => new
+                    {
+                        a.Id, a.Title, a.Points, a.Badge, a.Desc
+                    })
+                });
+            });
+
+            // Choose by id
+            _app.MapPost("/control/select", async (HttpRequest req, OverlayState s, IHubContext<OverlayHub> hub) =>
+            {
+                if (!req.Query.TryGetValue("id", out var idVal) || !int.TryParse(idVal, out var id))
+                    return Results.BadRequest("id missing");
+
+                var idx = s.RemainingList.FindIndex(a => a.Id == id);
+                if (idx < 0) return Results.NotFound("achievement not found");
+
+                s.ManualIndex = idx;
+                var a = s.RemainingList[idx];
+                await hub.Clients.All.SendAsync("next", new { title = a.Title, points = a.Points, badge = a.Badge, desc = a.Desc });
+                return Results.Ok();
+            });
+
+            // Manual cycling (kept for convenience)
+            _app.MapPost("/control/next", async (OverlayState s, IHubContext<OverlayHub> hub) =>
+            {
+                if (s.RemainingList.Count == 0) return Results.BadRequest("No remaining");
+                s.ManualIndex = ((s.ManualIndex ?? -1) + 1) % s.RemainingList.Count;
+                var a = s.RemainingList[s.ManualIndex.Value];
+                await hub.Clients.All.SendAsync("next", new { title = a.Title, points = a.Points, badge = a.Badge, desc = a.Desc });
+                return Results.Ok();
+            });
+
+            _app.MapPost("/control/prev", async (OverlayState s, IHubContext<OverlayHub> hub) =>
+            {
+                if (s.RemainingList.Count == 0) return Results.BadRequest("No remaining");
+                var start = s.ManualIndex ?? 0;
+                s.ManualIndex = (start - 1 + s.RemainingList.Count) % s.RemainingList.Count;
+                var a = s.RemainingList[s.ManualIndex.Value];
+                await hub.Clients.All.SendAsync("next", new { title = a.Title, points = a.Points, badge = a.Badge, desc = a.Desc });
+                return Results.Ok();
+            });
+
+            _app.MapPost("/control/auto", (OverlayState s) => { s.ManualIndex = null; return Results.Ok(); });
+
+            // Control page (lists all remaining + selectable)
+            _app.MapGet("/control", async ctx =>
+            {
+                ctx.Response.ContentType = "text/html; charset=utf-8";
+                await ctx.Response.WriteAsync("""
+<!doctype html>
+<meta charset="utf-8">
+<title>RA Overlay Control</title>
+<style>
+  :root { color-scheme: dark; }
+  body{font: 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:16px; background:#111; color:#eee}
+  h1{font-size:16px;margin:0 0 12px 0}
+  .row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+  input[type=search]{padding:8px 10px;border-radius:8px;border:1px solid #333;background:#1b1b1b;color:#fff;min-width:260px}
+  button{padding:8px 12px;border:0;border-radius:8px;background:#2d6cdf;color:#fff;cursor:pointer}
+  button.secondary{background:#444}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-top:12px}
+  .card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:10px;display:flex;gap:10px;align-items:center}
+  .badge{width:48px;height:48px;border-radius:8px;background-size:cover;background-position:center;flex:0 0 auto}
+  .title{font-weight:600}
+  .pts{opacity:.8}
+  .desc{opacity:.9;margin-top:4px;font-size:12px;line-height:1.25}
+  .muted{opacity:.7}
+  .bar{height:6px;background:#2a2a2a;border-radius:999px;margin-top:4px;overflow:hidden}
+  .bar>i{display:block;height:100%;background:#4fd269;width:0%}
+  .sel{outline:2px solid #2d6cdf}
+</style>
+<h1>RA Overlay Control</h1>
+<div class="row">
+  <input id="q" type="search" placeholder="Search achievements...">
+  <button id="prev" class="secondary">Prev</button>
+  <button id="auto" class="secondary">Auto</button>
+  <button id="next">Next</button>
+</div>
+<div id="game" class="muted"></div>
+<div class="bar"><i id="prog"></i></div>
+<div id="grid" class="grid"></div>
+
+<script>
+async function getData(){
+  const r = await fetch('/control/data'); 
+  if(!r.ok) throw new Error('data failed');
+  return await r.json();
+}
+function badgeStyle(url){ return url ? `background-image:url('${url.replace(/'/g,"%27")}')` : '' }
+
+let items = [], selectedId = null;
+function render(data){
+  selectedId = data.selectedId;
+  document.getElementById('game').textContent =
+    data.game?.title ? `${data.game.title} — ${data.manual?'Manual':'Auto'} tracking` : 'Waiting for game...';
+  // progress (if present in header text)
+  const m = /(\d+)\s*\/\s*(\d+)/.exec('');
+  // grid
+  const q = document.getElementById('q').value.toLowerCase();
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  items = data.remaining;
+  for(const a of items){
+    if(q && !(a.title.toLowerCase().includes(q) || (a.desc||'').toLowerCase().includes(q))) continue;
+    const card = document.createElement('div');
+    card.className = 'card'+(a.id===selectedId?' sel':'');
+    card.innerHTML = `
+      <div class="badge" style="${badgeStyle(a.badge)}"></div>
+      <div style="min-width:0">
+        <div class="title">${a.title}</div>
+        <div class="pts">${a.points} pts</div>
+        <div class="desc">${a.desc??''}</div>
+      </div>`;
+    card.onclick = async () => {
+      await fetch('/control/select?id='+a.id, {method:'POST'});
+      // optimistic UI: mark selected immediately
+      document.querySelectorAll('.card.sel').forEach(e=>e.classList.remove('sel'));
+      card.classList.add('sel');
+    };
+    grid.appendChild(card);
+  }
+}
+
+getData().then(render);
+document.getElementById('q').addEventListener('input', () => render({remaining:items, selectedId, game:{}, manual:true}));
+document.getElementById('prev').onclick = ()=>fetch('/control/prev',{method:'POST'}).then(()=>getData().then(render));
+document.getElementById('auto').onclick = ()=>fetch('/control/auto',{method:'POST'}).then(()=>getData().then(render));
+document.getElementById('next').onclick = ()=>fetch('/control/next',{method:'POST'}).then(()=>getData().then(render));
+setInterval(()=>getData().then(render).catch(()=>{}), 5000);
+</script>
+""");
             });
 
             await _app.StartAsync(ct);
@@ -106,9 +255,9 @@ namespace RaOverlay.Desktop
         public override async Task OnConnectedAsync()
         {
             if (_state.NowPlaying is not null) await Clients.Caller.SendAsync("now-playing", _state.NowPlaying);
-            if (_state.Progress is not null) await Clients.Caller.SendAsync("progress", _state.Progress);
-            if (_state.Remaining.Count > 0) await Clients.Caller.SendAsync("remaining", new { remaining = _state.Remaining });
-            if (_state.Next is not null) await Clients.Caller.SendAsync("next", _state.Next);
+            if (_state.Progress   is not null) await Clients.Caller.SendAsync("progress", _state.Progress);
+            if (_state.Remaining.Count > 0)    await Clients.Caller.SendAsync("remaining", new { remaining = _state.Remaining });
+            if (_state.Next       is not null) await Clients.Caller.SendAsync("next", _state.Next);
             if (_state.RecentToasts.Count > 0) await Clients.Caller.SendAsync("achievement", _state.RecentToasts[^1]);
             await base.OnConnectedAsync();
         }
@@ -118,17 +267,26 @@ namespace RaOverlay.Desktop
     {
         public object? NowPlaying { get; set; }
         public object? Progress { get; set; }
-        public List<object> Remaining { get; } = new();
+        public List<object> Remaining { get; } = new();             // payload for overlay chips
+
+        // Simple list with description for control/selection logic
+        public List<SimpleAch> RemainingList { get; } = new();
+        public record SimpleAch(int Id, string Title, int Points, string? Badge, string? Desc);
+
         public object? Next { get; set; }
         public List<object> RecentToasts { get; } = new();
+
+        public int? ManualIndex { get; set; }                        // null => auto
+        public SimpleAch? GetSelected()
+            => ManualIndex is int idx && idx >= 0 && idx < RemainingList.Count ? RemainingList[idx] : null;
     }
 
     public sealed record RaOptions
     {
-        public string Username { get; init; } = "";  // RA username
-        public string WebApiKey { get; init; } = "";  // RA web API key
-        public int PollSeconds { get; init; } = 5;
-        public string NextSort { get; init; } = "list"; // list|first|lowest|highest
+        public string Username   { get; init; } = "";
+        public string WebApiKey  { get; init; } = "";
+        public int    PollSeconds{ get; init; } = 5;
+        public string NextSort   { get; init; } = "list"; // list|first|lowest|highest
     }
 
     public sealed class RaPollingService : BackgroundService
@@ -140,11 +298,10 @@ namespace RaOverlay.Desktop
         private readonly IHubContext<OverlayHub> _hub;
 
         private readonly HashSet<int> _announced = new();
+        private readonly HashSet<int> _seenEarned = new();
         private int _currentGameId = 0;
         private GameProgress? _lastProgress;
         private DateTime _lastUnlockUtc = DateTime.MinValue;
-        private readonly HashSet<int> _seenEarned = new();
-
 
         public RaPollingService(
             ILogger<RaPollingService> log,
@@ -153,11 +310,11 @@ namespace RaOverlay.Desktop
             RaOptions opts,
             IHubContext<OverlayHub> hub)
         {
-            _log = log;
+            _log  = log;
             _http = http;
             _state = state;
-            _opts = opts;
-            _hub = hub;
+            _opts  = opts;
+            _hub   = hub;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -196,31 +353,56 @@ namespace RaOverlay.Desktop
             {
                 _announced.Clear();
                 _seenEarned.Clear();
+                _state.ManualIndex = null;
                 _currentGameId = game.GameId;
             }
 
             _state.NowPlaying = new { title = game.Title, consoleName = game.ConsoleName, boxArt = game.ImageBoxArt };
             await _hub.Clients.All.SendAsync("now-playing", _state.NowPlaying, ct);
 
-            // 2) Progress + remaining from get-game-info-and-user-progress
+            // 2) Progress + remaining (with descriptions)
             var progress = await GetGameProgress(http, _opts.Username, game.GameId, ct);
             _lastProgress = progress;
             var pct = progress.Total > 0 ? (int)Math.Round(progress.Earned / (double)progress.Total * 100) : 0;
             _state.Progress = new { percent = pct, earned = progress.Earned, total = progress.Total };
             await _hub.Clients.All.SendAsync("progress", _state.Progress, ct);
 
+            // overlay chips + server list
             _state.Remaining.Clear();
+            _state.RemainingList.Clear();
             foreach (var a in progress.Remaining)
+            {
                 _state.Remaining.Add(new { title = a.Title, badge = a.Badge, points = a.Points });
+                _state.RemainingList.Add(new OverlayState.SimpleAch(a.Id, a.Title, a.Points, a.Badge, a.Description));
+            }
             await _hub.Clients.All.SendAsync("remaining", new { remaining = _state.Remaining }, ct);
 
-            // Fast path: toast anything that just flipped to earned in this poll
+            // Selected "Next" (include desc)
+            if (_state.RemainingList.Count == 0)
+            {
+                _state.ManualIndex = null;
+                _state.Next = null;
+            }
+            else if (_state.ManualIndex.HasValue)
+            {
+                var idx = Math.Clamp(_state.ManualIndex.Value, 0, _state.RemainingList.Count - 1);
+                _state.ManualIndex = idx;
+                var a = _state.RemainingList[idx];
+                _state.Next = new { title = a.Title, points = a.Points, badge = a.Badge, desc = a.Desc };
+            }
+            else
+            {
+                var auto = PickNext(_opts.NextSort, progress.Remaining);
+                if (auto is null) _state.Next = null;
+                else _state.Next = new { title = auto.Title, points = auto.Points, badge = auto.Badge, desc = auto.Description };
+            }
+            await _hub.Clients.All.SendAsync("next", _state.Next, ct);
+
+            // 3) Fast toasts from progress diff
             foreach (var ea in progress.EarnedList)
             {
-                // only emit once per game session
                 if (_seenEarned.Add(ea.Id))
                 {
-                    // avoid spamming old unlocks on initial connect: require recent within 10 minutes if RA gives us a date
                     var dt = ParseRaDate(ea.Date) ?? DateTime.UtcNow;
                     if (DateTime.UtcNow - dt <= TimeSpan.FromMinutes(10))
                     {
@@ -236,37 +418,21 @@ namespace RaOverlay.Desktop
                 }
             }
 
-            var next = PickNext(_opts.NextSort, progress.Remaining);
-            _state.Next = next == null ? null : new { title = next.Title, points = next.Points, badge = next.Badge };
-            await _hub.Clients.All.SendAsync("next", _state.Next, ct);
-
-            // 3) New unlocks
+            // 4) Backup feed (ensures we never miss a toast)
             var unlocks = await GetRecentUnlocks(http, _opts.Username, ct);
             foreach (var u in unlocks.OrderBy(x => ParseRaDate(x.Date) ?? DateTime.UtcNow))
             {
                 var when = ParseRaDate(u.Date) ?? DateTime.UtcNow;
                 if (_announced.Contains(u.Id) && when <= _lastUnlockUtc) continue;
 
-                if (when > _lastUnlockUtc || !_announced.Contains(u.Id))
-                {
-                    _announced.Add(u.Id);
-                    _lastUnlockUtc = when;
+                _announced.Add(u.Id);
+                _lastUnlockUtc = when;
 
-                    var payload = new { title = u.Title, points = u.Points, badge = u.BadgeUrl, gameId = u.GameId, date = u.Date };
-                    await _hub.Clients.All.SendAsync("achievement", payload, ct);
+                var payload = new { title = u.Title, points = u.Points, badge = u.BadgeUrl, gameId = u.GameId, date = u.Date };
+                await _hub.Clients.All.SendAsync("achievement", payload, ct);
 
-                    _state.RecentToasts.Add(payload);
-                    while (_state.RecentToasts.Count > 5) _state.RecentToasts.RemoveAt(0);
-
-                    // keep progress bar in sync
-                    if (_lastProgress is not null && _currentGameId == u.GameId)
-                    {
-                        _lastProgress.Earned = Math.Min(_lastProgress.Total, _lastProgress.Earned + 1);
-                        var pct2 = _lastProgress.Total > 0 ? (int)Math.Round(_lastProgress.Earned / (double)_lastProgress.Total * 100) : 0;
-                        _state.Progress = new { percent = pct2, earned = _lastProgress.Earned, total = _lastProgress.Total };
-                        await _hub.Clients.All.SendAsync("progress", _state.Progress, ct);
-                    }
-                }
+                _state.RecentToasts.Add(payload);
+                while (_state.RecentToasts.Count > 5) _state.RecentToasts.RemoveAt(0);
             }
         }
 
@@ -275,10 +441,10 @@ namespace RaOverlay.Desktop
             if (list == null || list.Count == 0) return null;
             return (mode?.ToLowerInvariant()) switch
             {
-                "first" => list.FirstOrDefault(),
-                "lowest" => list.OrderBy(a => a.Points).FirstOrDefault(),
+                "first"   => list.FirstOrDefault(),
+                "lowest"  => list.OrderBy(a => a.Points).FirstOrDefault(),
                 "highest" => list.OrderByDescending(a => a.Points).FirstOrDefault(),
-                _ => list.FirstOrDefault(), // "list"
+                _         => list.FirstOrDefault(),
             };
         }
 
@@ -308,14 +474,11 @@ namespace RaOverlay.Desktop
                 s.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
                 return s;
 
-            // if the string already starts with '/', it’s a site-relative path
             if (s.StartsWith("/")) return $"https://retroachievements.org{s}";
-            // some fields are bare badge names – put them under /Badge/
             if (s.All(char.IsDigit)) return $"https://retroachievements.org/Badge/{s}.png";
             return $"https://retroachievements.org/{s.TrimStart('/')}";
         }
 
-        // v1 docs: get-user-recently-played-games — y (api key), u (username), c (count), o (offset)
         private async Task<List<RecentGame>> GetRecentGames(HttpClient http, CancellationToken ct)
         {
             var u = Uri.EscapeDataString(_opts.Username);
@@ -329,8 +492,8 @@ namespace RaOverlay.Desktop
             {
                 list.Add(new RecentGame
                 {
-                    GameId = GetInt(e, "GameID", "gameId"),
-                    Title = GetStr(e, "Title", "title"),
+                    GameId      = GetInt(e, "GameID", "gameId"),
+                    Title       = GetStr(e, "Title", "title"),
                     ConsoleName = GetStr(e, "ConsoleName", "consoleName"),
                     ImageBoxArt = MakeAbsoluteMediaUrl(GetStr(e, "ImageBoxArt", "imageBoxArt"))
                 });
@@ -338,7 +501,6 @@ namespace RaOverlay.Desktop
             return list;
         }
 
-        // v1 docs: get-game-info-and-user-progress — y, u, g
         private async Task<GameProgress> GetGameProgress(HttpClient http, string user, int gameId, CancellationToken ct)
         {
             var u = Uri.EscapeDataString(user);
@@ -349,7 +511,7 @@ namespace RaOverlay.Desktop
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            var total = GetInt(root, "NumAchievements", "numAchievements");
+            var total  = GetInt(root, "NumAchievements", "numAchievements");
             var earned = GetInt(root, "NumAwardedToUser", "numAwardedToUser");
 
             var remaining = new List<RemainingAchievement>();
@@ -360,41 +522,36 @@ namespace RaOverlay.Desktop
                 foreach (var kv in achs.EnumerateObject())
                 {
                     var a = kv.Value;
-                    var id = GetInt(a, "ID", "id");
-                    var title = GetStr(a, "Title", "title");
+                    var id     = GetInt(a, "ID", "id");
+                    var title  = GetStr(a, "Title", "title");
                     var points = GetInt(a, "Points", "points");
                     var badgeNameOrUrl = GetStr(a, "BadgeName", "badgeName", "BadgeURL", "badgeUrl");
                     var badgeUrl = MakeAbsoluteMediaUrl(badgeNameOrUrl);
-                    var date = GetStr(a, "DateEarnedHardcore", "dateEarnedHardcore", "DateEarned", "dateEarned");
+                    var desc   = GetStr(a, "Description", "description");
+                    var date  = GetStr(a, "DateEarnedHardcore", "dateEarnedHardcore", "DateEarned", "dateEarned");
                     var isEarned = !string.IsNullOrWhiteSpace(date);
 
                     if (isEarned)
-                    {
                         earnedList.Add(new EarnedAchievement { Id = id, Title = title, Points = points, Badge = badgeUrl, Date = date });
-                    }
                     else
-                    {
-                        remaining.Add(new RemainingAchievement { Id = id, Title = title, Points = points, Badge = badgeUrl });
-                    }
+                        remaining.Add(new RemainingAchievement { Id = id, Title = title, Points = points, Badge = badgeUrl, Description = desc });
                 }
             }
 
             return new GameProgress
             {
                 GameId = gameId,
-                Total = total,
                 Earned = earned,
+                Total = total,
                 Remaining = remaining,
                 EarnedList = earnedList
             };
         }
 
-        // v1 docs: get-user-recent-achievements — y, u, m (minutes lookback)
         private async Task<List<RecentUnlock>> GetRecentUnlocks(HttpClient http, string user, CancellationToken ct)
         {
             var u = Uri.EscapeDataString(user);
             var y = Uri.EscapeDataString(_opts.WebApiKey);
-            // Look back 120 minutes so OBS/browser refresh won't miss one
             var url = $"API/API_GetUserRecentAchievements.php?u={u}&y={y}&m=120";
             var json = await http.GetStringAsync(url, ct);
 
@@ -403,17 +560,16 @@ namespace RaOverlay.Desktop
             foreach (var e in arr)
             {
                 var badge = GetStr(e, "BadgeURL", "badgeUrl", "BadgeName", "badgeName");
-                // if BadgeName (numeric) was supplied, MakeAbsoluteMediaUrl will turn it into /Badge/{id}.png
                 var badgeUrl = MakeAbsoluteMediaUrl(badge);
 
                 list.Add(new RecentUnlock
                 {
-                    Id = GetInt(e, "AchievementID", "achievementId"),
-                    Title = GetStr(e, "Title", "title"),
-                    Points = GetInt(e, "Points", "points"),
-                    GameId = GetInt(e, "GameID", "gameId"),
-                    BadgeUrl = badgeUrl,
-                    Date = GetStr(e, "Date", "date")
+                    Id      = GetInt(e, "AchievementID", "achievementId"),
+                    Title   = GetStr(e, "Title", "title"),
+                    Points  = GetInt(e, "Points", "points"),
+                    GameId  = GetInt(e, "GameID", "gameId"),
+                    BadgeUrl= badgeUrl,
+                    Date    = GetStr(e, "Date", "date")
                 });
             }
             return list;
@@ -440,7 +596,7 @@ namespace RaOverlay.Desktop
             return 0;
         }
 
-        // ---------- DTOs (internal) ----------
+        // ---------- DTOs ----------
         private sealed class RecentGame
         {
             public int GameId { get; set; }
@@ -458,21 +614,22 @@ namespace RaOverlay.Desktop
             public List<EarnedAchievement> EarnedList { get; set; } = new();
         }
 
-        private sealed class EarnedAchievement
-        {
-            public int Id { get; set; }
-            public string Title { get; set; } = "";
-            public int Points { get; set; }
-            public string? Badge { get; set; }
-            public string? Date { get; set; } // RA date string if present
-        }
-
         private sealed class RemainingAchievement
         {
             public int Id { get; set; }
             public string Title { get; set; } = "";
             public string? Badge { get; set; }
             public int Points { get; set; }
+            public string? Description { get; set; }
+        }
+
+        private sealed class EarnedAchievement
+        {
+            public int Id { get; set; }
+            public string Title { get; set; } = "";
+            public int Points { get; set; }
+            public string? Badge { get; set; }
+            public string? Date { get; set; }
         }
 
         private sealed class RecentUnlock

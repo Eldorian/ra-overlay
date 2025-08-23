@@ -11,6 +11,7 @@ A tiny **.NET 8 (WPF)** desktop app that hosts a local web overlay for OBS and p
 - “Next up” achievement (configurable sort)
 - Remaining achievements (chips)
 - Toast when you unlock an achievement (+ optional sound)
+- Control Panel: pick any remaining achievement to track, or switch between Auto / Next / Prev
 
 **One-click download:**  
 👉 [⬇️ Download for Windows (win-x64)](../../releases/latest/download/RaOverlay-win-x64.zip)
@@ -29,9 +30,62 @@ A tiny **.NET 8 (WPF)** desktop app that hosts a local web overlay for OBS and p
 5. Click **Start**. Copy the **OBS Browser Source URL** shown in the app.
 6. In **OBS** → **Sources** → **Browser** → paste the URL and click OK.  
    - Suggested size: Width `800–1200`, Height `200–300`. Background is transparent.
+7. (Optional but recommended) Open the **Control Panel** URL (shown above the OBS Url in the app) to pick between which achievement to track or search.
 
 Settings are saved automatically to `%APPDATA%\RaOverlay\settings.json`.  
 Your API key is stored **encrypted per Windows user** via DPAPI.
+
+---
+
+## 🎚 Control Panel (OBS Dock / Browser)
+
+The app exposes a built-in control page:
+- URL: http://localhost:{PORT}/control (also shown in the app with Copy and Open buttons)
+- What it does
+  - Shows all remaining achievements (searchable)
+  - Click any item to manually select it as “next” (overlay updates instantly, and the large focus card shows title, points, and requirement text)
+  - Buttons for Prev, Auto, Next
+
+**Use it as an OBS Dock:**
+
+- OBS → View → Docks → Custom Browser Docks…
+  Name: RA Controls, URL: http://localhost:{PORT}/control → Apply
+
+Endpoints (for power users / automation):
+
+| Method	| Path	                    | What it does                          |
+|--------:|---------------------------|---------------------------------------|                  
+| GET	    | /control	                | Control UI (HTML)                     |
+| POST	  | /control/select?id=12345	| Manually select achievement by ID     |
+| POST	  | /control/next	            | Cycle to next remaining               |
+| POST	  | /control/prev	            | Cycle to previous                     |
+| POST	  | /control/auto	            | Return to automatic selection         |
+
+---
+
+## 🎚 Stream Deck Setup
+
+You can control the overlay from an Elgato Stream Deck.
+
+**Option A — HTTP Plugin (recommended)**
+1. In the Stream Deck app, open the Store, install an HTTP Request plugin (e.g., BarRaider Stream Deck Tools).
+2. Add three buttons (HTTP Request action):
+  - Next → Method: POST • URL: http://localhost:{PORT}/control/next
+  - Prev → Method: POST • URL: http://localhost:{PORT}/control/prev
+  - Auto → Method: POST • URL: http://localhost:{PORT}/control/auto
+4. (Optional) Add a Website/Open button for the control page: http://localhost:{PORT}/control
+
+**Option B — No plugin (PowerShell)**
+
+Use a System → Open action with these arguments:
+- **Application:** powershell.exe
+- **Arguments:**
+  - Next: ```-NoLogo -NoProfile -Command "Invoke-RestMethod -Method Post -Uri 'http://localhost:{PORT}/control/next' | Out-Null"```
+  - Prev: ```-NoLogo -NoProfile -Command "Invoke-RestMethod -Method Post -Uri 'http://localhost:{PORT}/control/prev' | Out-Null"```
+  - Auto: ```-NoLogo -NoProfile -Command "Invoke-RestMethod -Method Post -Uri 'http://localhost:{PORT}/control/auto' | Out-Null"```
+  - Ping: ```-NoLogo -NoProfile -Command "Invoke-RestMethod -Uri 'http://localhost:{PORT}/__ping_toast' | Out-Null"```
+
+⚠️ The server binds to localhost. For remote control from another device, you’d need to run RA Overlay on the streaming PC and point the Stream Deck on the same machine at localhost (or modify the server to listen on your LAN IP).
 
 ---
 

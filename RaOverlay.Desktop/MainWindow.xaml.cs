@@ -20,6 +20,8 @@ public partial class MainWindow : System.Windows.Window
         _settings = SettingsStore.Load();
         ApplySettingsToUi(_settings);
 
+        UpdateControlUrl();
+
         _uiReady = true;
         UpdateUrl();
     }
@@ -34,7 +36,7 @@ public partial class MainWindow : System.Windows.Window
         // Options
         SelectCombo(PosBox, s.Position);
         Alpha.Value = Clamp(s.Opacity, 0, 1);
-        Blur.Value  = s.Blur;
+        Blur.Value = s.Blur;
         Scale.Value = Clamp(s.Scale, 0.6, 1.4);
         MinWidthBox.Text = s.MinWidth.ToString();
         RgbBox.Text = string.IsNullOrWhiteSpace(s.BackgroundRgb) ? "32,34,38" : s.BackgroundRgb;
@@ -56,13 +58,13 @@ public partial class MainWindow : System.Windows.Window
             Port = int.TryParse(PortBox?.Text, out var p) ? p : 4050,
 
             Position = GetCombo(PosBox) ?? "tl",
-            Opacity  = Alpha?.Value ?? 0.75,
-            Blur     = (int)(Blur?.Value ?? 8),
-            Scale    = Scale?.Value ?? 1.0,
+            Opacity = Alpha?.Value ?? 0.75,
+            Blur = (int)(Blur?.Value ?? 8),
+            Scale = Scale?.Value ?? 1.0,
             MinWidth = int.TryParse(MinWidthBox?.Text, out var mw) ? mw : 560,
             BackgroundRgb = (RgbBox?.Text ?? "32,34,38").Trim(),
             NextSort = GetCombo(SortBox) ?? "list",
-            Layout   = GetCombo(LayoutBox) ?? "horizontal",
+            Layout = GetCombo(LayoutBox) ?? "horizontal",
 
             SoundPath = _soundPath
         };
@@ -78,10 +80,10 @@ public partial class MainWindow : System.Windows.Window
     // ---------- overlay server options ----------
     private RaOptions ReadOptions() => new()
     {
-        Username  = UserBox?.Text?.Trim() ?? "",
+        Username = UserBox?.Text?.Trim() ?? "",
         WebApiKey = KeyBox?.Password?.Trim() ?? "",
         PollSeconds = 5,                         // faster/more responsive
-        NextSort  = GetCombo(SortBox) ?? "list"
+        NextSort = GetCombo(SortBox) ?? "list"
     };
 
     private int ReadPort() => int.TryParse(PortBox?.Text, out var p) ? p : 4050;
@@ -89,10 +91,10 @@ public partial class MainWindow : System.Windows.Window
     // ---------- URL building ----------
     private void UpdateUrl()
     {
-        var pos   = GetCombo(PosBox) ?? "tl";
+        var pos = GetCombo(PosBox) ?? "tl";
         var alpha = (Alpha?.Value ?? 0.75).ToString("0.00");
-        var blur  = ((int)(Blur?.Value ?? 8)).ToString();
-        var bg    = (RgbBox?.Text ?? "32,34,38").Trim();
+        var blur = ((int)(Blur?.Value ?? 8)).ToString();
+        var bg = (RgbBox?.Text ?? "32,34,38").Trim();
         var scale = (Scale?.Value ?? 1.00).ToString("0.00");
         var width = (MinWidthBox?.Text ?? "560").Trim();
         var layout = GetCombo(LayoutBox) ?? "horizontal";
@@ -106,10 +108,10 @@ public partial class MainWindow : System.Windows.Window
             qs.Append(k).Append('=').Append(Uri.EscapeDataString(v));
         }
 
-        add("pos",   pos);
+        add("pos", pos);
         add("alpha", alpha);
-        add("blur",  blur);
-        add("bg",    bg);
+        add("blur", blur);
+        add("bg", bg);
         add("scale", scale);
         add("width", width);
         add("layout", layout);
@@ -185,7 +187,7 @@ public partial class MainWindow : System.Windows.Window
         var dlg = new OpenFileDialog
         {
             Filter = "MP3 Files|*.mp3",
-            Title  = "Choose unlock sound"
+            Title = "Choose unlock sound"
         };
         if (dlg.ShowDialog() == true)
         {
@@ -201,7 +203,7 @@ public partial class MainWindow : System.Windows.Window
 
     // ---------- live URL updates + autosave ----------
     private void TextChanged_UpdateUrl(object? s, System.Windows.Controls.TextChangedEventArgs e)
-    { if (_uiReady) { UpdateUrl(); SaveSettings(); } }
+    { if (_uiReady) { UpdateUrl(); SaveSettings(); } UpdateControlUrl(); }
 
     private void PasswordChanged_UpdateUrl(object? s, RoutedEventArgs e)
     { if (_uiReady) { UpdateUrl(); SaveSettings(); } }
@@ -238,6 +240,33 @@ public partial class MainWindow : System.Windows.Window
             File.Copy(_soundPath, Path.Combine(www, "unlock.mp3"), overwrite: true);
         }
         catch { /* ignore or log if you want */ }
+    }
+
+    private int GetPort()
+    {
+        if (int.TryParse(PortBox?.Text, out var p) && p > 0 && p < 65536) return p;
+        return 4050;
+    }
+
+    private void UpdateControlUrl()
+    {
+        var port = GetPort();
+        if (ControlUrlBox != null)
+        {
+            ControlUrlBox.Text = $"http://localhost:{port}/control";
+        }
+    }
+
+    private void CopyControl_Click(object sender, RoutedEventArgs e)
+    {
+        try { Clipboard.SetText(ControlUrlBox?.Text ?? string.Empty); } catch { }
+    }
+
+    private void OpenControl_Click(object sender, RoutedEventArgs e)
+    {
+        var url = ControlUrlBox?.Text;
+        if (string.IsNullOrWhiteSpace(url)) return;
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
     }
 
     // graceful teardown

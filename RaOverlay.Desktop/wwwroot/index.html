@@ -309,6 +309,50 @@
         --pad: 6px;
       }
     }
+
+    .focus {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      background: rgba(0, 0, 0, var(--alpha, 0.75));
+      backdrop-filter: blur(var(--blur, 8px));
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin: 8px 0;
+    }
+
+    .focus.hidden {
+      display: none;
+    }
+
+    .focus-badge {
+      width: 64px;
+      height: 64px;
+      border-radius: 10px;
+      background-size: cover;
+      background-position: center;
+      flex: 0 0 auto;
+    }
+
+    .focus-body {
+      min-width: 0
+    }
+
+    .focus-title {
+      font-weight: 700;
+      font-size: 18px;
+    }
+
+    .focus-points {
+      opacity: .85;
+      margin-top: 2px;
+    }
+
+    .focus-desc {
+      margin-top: 6px;
+      opacity: .9;
+      line-height: 1.25;
+    }
   </style>
 </head>
 
@@ -333,6 +377,17 @@
         <div class="name" id="nextName"></div>
         <div class="pts" id="nextPts"></div>
       </div>
+
+      <!-- Big focus card for the selected/next achievement -->
+      <div id="focus" class="focus hidden">
+        <div class="focus-badge"></div>
+        <div class="focus-body">
+          <div class="focus-title"></div>
+          <div class="focus-points"></div>
+          <div class="focus-desc"></div>
+        </div>
+      </div>
+
 
       <div class="panel chips" id="chips"></div>
     </div>
@@ -363,6 +418,7 @@
     const layout = (q.get('layout') || 'horizontal').toLowerCase();
     const vwidth = parseInt(q.get('vwidth') || q.get('width') || '240', 10);
     const maxChips = parseInt(q.get('max') || (layout === 'vertical' ? '40' : '8'), 10);
+    const showFocus = (q.get('focus') ?? '1') !== '0';  // &focus=0 to hide big card
 
     document.documentElement.style.setProperty('--alpha', alpha);
     document.documentElement.style.setProperty('--blur', blur + 'px');
@@ -402,7 +458,7 @@
     }
     function setRemaining(listOrPayload) {
       const list = (listOrPayload?.remaining || listOrPayload || []);
-      const show = list.slice(0, maxChips); 
+      const show = list.slice(0, maxChips);
       const chips = document.getElementById('chips');
       chips.innerHTML = '';
       show.forEach(a => {
@@ -423,6 +479,22 @@
       $('#nextPts').textContent = n.points ? `• ${n.points} pts` : '';
       wrap.style.display = '';
     }
+    function setFocus(n) {
+      const f = document.getElementById('focus');
+      if (!showFocus || !n || !n.title) {
+        f.classList.add('hidden');
+        return;
+      }
+      f.querySelector('.focus-title').textContent = n.title || '';
+      f.querySelector('.focus-points').textContent = (n.points ?? 0) + ' pts';
+      f.querySelector('.focus-desc').textContent = n.desc || '';
+      f.querySelector('.focus-badge').style.backgroundImage =
+        n.badge ? `url("${n.badge}")` : 'none';
+
+      f.classList.remove('hidden');
+    }
+
+
 
     // sound helper (reliable/overlapping)
     const sfx = document.getElementById('sfx');
@@ -455,7 +527,7 @@
     hub.on('now-playing', setNowPlaying);
     hub.on('progress', setProgress);
     hub.on('remaining', setRemaining);
-    hub.on('next', setNext);
+    hub.on('next', n => {setNext(n); setFocus(n);});
     hub.on('achievement', showToast);
 
     hub.start().catch(err => console.error(err));
