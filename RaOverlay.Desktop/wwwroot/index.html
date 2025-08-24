@@ -13,12 +13,9 @@
       --alpha: .75;
       --blur: 8px;
       --bg: 32, 34, 38;
-      /* r,g,b */
       --scale: 1;
       --minw: 560px;
-      /* horizontal min width */
       --vwidth: 240px;
-      /* vertical column width (clamped) */
       --pad: 8px;
     }
 
@@ -82,12 +79,15 @@
     }
 
     /* layouts */
-    #stack.horizontal {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      min-width: var(--minw);
-      max-width: calc(var(--minw) + 480px);
+    /* horizontal ribbon */
+    #stack.horizontal{
+      display:flex;
+      flex-direction:row;
+      align-items:center;
+      gap:8px;
+      width:100vw;      /* span across the screen */
+      min-width:0;      /* allow shrinking instead of forcing tall wrap */
+      max-width:100vw;
     }
 
     #stack.vertical {
@@ -353,6 +353,72 @@
       opacity: .9;
       line-height: 1.25;
     }
+
+    .lb {
+      padding: 10px
+    }
+
+    .lb h3 {
+      margin: 0 0 6px 0;
+      font-size: 14px
+    }
+
+    .lb .me {
+      opacity: .9;
+      margin: 4px 0
+    }
+
+    .lb ol {
+      margin: 6px 0 0 18px;
+      padding: 0
+    }
+
+    .lb li {
+      margin: 2px 0
+    }
+
+    /* --- Added horizontal-specific rules --- */
+    /* compact header in horizontal */
+    #stack.horizontal .header{ padding:6px 10px; grid-template-columns:44px 1fr; }
+    #stack.horizontal .title{ font-size:14px; }
+    #stack.horizontal .sub{ font-size:11px; }
+    #stack.horizontal .bar-wrap{ height:6px; margin-top:6px; }
+
+    /* slim “next” pill */
+    #stack.horizontal .next{ padding:6px 8px; }
+
+    /* chips: single row, scroll if overflow */
+    #stack.horizontal .chips{
+      flex-wrap:nowrap;
+      overflow-x:auto;
+      max-height:56px;
+      padding:6px 8px;
+    }
+    #stack.horizontal .chip{ padding:4px 8px; }
+    #stack.horizontal .chip .name{ white-space:nowrap; }
+
+    /* leaderboard: inline, scroll if overflow */
+    #stack.horizontal .lb{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      white-space:nowrap;
+      overflow-x:auto;
+    }
+    #stack.horizontal .lb ol{
+      display:flex;
+      gap:12px;
+      margin:0;
+      padding:0;
+      list-style-position:inside;
+    }
+
+    /* keep horizontal short: hide big focus card */
+    #stack.horizontal #focus{ display:none; }
+
+    /* allow the whole ribbon to scroll horizontally if needed */
+    #root.pos-tl #stack.horizontal,
+    #root.pos-tr #stack.horizontal{ overflow-x:auto; }
   </style>
 </head>
 
@@ -388,6 +454,11 @@
         </div>
       </div>
 
+      <div class="panel lb" id="lbPanel" style="display:none">
+        <h3 id="lbTitle">Leaderboard</h3>
+        <div class="me" id="lbMe"></div>
+        <ol id="lbTop"></ol>
+      </div>
 
       <div class="panel chips" id="chips"></div>
     </div>
@@ -406,6 +477,8 @@
   <!-- preloaded, absolute path for reliability -->
   <audio id="sfx" src="/unlock.mp3" preload="auto"></audio>
 
+  <!-- Removed the earlier <script> block that referenced q/hub before they existed -->
+
   <script>
     // ---- query params ----
     const q = new URLSearchParams(location.search);
@@ -419,6 +492,15 @@
     const vwidth = parseInt(q.get('vwidth') || q.get('width') || '240', 10);
     const maxChips = parseInt(q.get('max') || (layout === 'vertical' ? '40' : '8'), 10);
     const showFocus = (q.get('focus') ?? '1') !== '0';  // &focus=0 to hide big card
+
+    const chipsPanel = document.getElementById('chips');
+    if (maxChips <= 0 && chipsPanel) chipsPanel.style.display = 'none';
+
+
+    /* NEW: leaderboard toggle now that q exists */
+    const showLb = (q.get('lb') || '0') === '1';
+    const lbPanel = document.getElementById('lbPanel');
+    if (!showLb && lbPanel) lbPanel.style.display = 'none';
 
     document.documentElement.style.setProperty('--alpha', alpha);
     document.documentElement.style.setProperty('--blur', blur + 'px');
@@ -457,10 +539,18 @@
       $('#bar').style.width = pct + '%';
     }
     function setRemaining(listOrPayload) {
+      const panel = document.getElementById('chips');
+
+      // If chips are disabled, hide the panel and bail.
+      if (maxChips <= 0) { if (panel) panel.style.display = 'none'; return; }
+
+      // Ensure visible when enabled.
+      if (panel) panel.style.display = '';
+
       const list = (listOrPayload?.remaining || listOrPayload || []);
       const show = list.slice(0, maxChips);
-      const chips = document.getElementById('chips');
-      chips.innerHTML = '';
+
+      panel.innerHTML = '';
       show.forEach(a => {
         const el = document.createElement('div');
         el.className = 'chip';
@@ -468,9 +558,10 @@
       <div class="badge" style="background-image:url('${a.badge || ''}')"></div>
       <div class="name">${a.title}</div>
     `;
-        chips.appendChild(el);
+        panel.appendChild(el);
       });
     }
+
     function setNext(n) {
       const wrap = $('#next');
       if (!n) { wrap.style.display = 'none'; return; }
@@ -494,8 +585,6 @@
       f.classList.remove('hidden');
     }
 
-
-
     // sound helper (reliable/overlapping)
     const sfx = document.getElementById('sfx');
     function playSfx() {
@@ -518,6 +607,21 @@
       playSfx();
     }
 
+    function renderLb(d) {
+      if (!showLb) return;
+      if (!d) { if (lbPanel) lbPanel.style.display = 'none'; return; }
+      if (lbPanel) lbPanel.style.display = '';
+      document.getElementById('lbTitle').textContent = d.title || 'Leaderboard';
+      const top = document.getElementById('lbTop'); top.innerHTML = '';
+      for (const e of (d.top || [])) {
+        const li = document.createElement('li');
+        li.textContent = `#${e.rank} ${e.user} — ${e.formattedScore}`;
+        top.appendChild(li);
+      }
+      const me = d.me;
+      document.getElementById('lbMe').textContent = me ? `You: #${me.rank} • ${me.formattedScore}` : '';
+    }
+
     // ---- SignalR ----
     const hub = new signalR.HubConnectionBuilder()
       .withUrl('/overlayhub')
@@ -527,8 +631,10 @@
     hub.on('now-playing', setNowPlaying);
     hub.on('progress', setProgress);
     hub.on('remaining', setRemaining);
-    hub.on('next', n => {setNext(n); setFocus(n);});
+    hub.on('next', n => { setNext(n); setFocus(n); });
     hub.on('achievement', showToast);
+
+    hub.on('leaderboard', renderLb);
 
     hub.start().catch(err => console.error(err));
   </script>

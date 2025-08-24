@@ -9,8 +9,8 @@ public sealed class OverlaySettings
 {
     public string Username { get; set; } = "";
     public string ApiKeyCipher { get; set; } = "";              // DPAPI-protected
-    public int Port { get; set; } = 4050;   
-    
+    public int Port { get; set; } = 4050;
+
     public string Position { get; set; } = "tl";                 // tl|tr|bl|br
     public double Opacity { get; set; } = 0.75;                 // 0..1
     public int Blur { get; set; } = 8;                          // px
@@ -21,6 +21,9 @@ public sealed class OverlaySettings
 
     public string? SoundPath { get; set; }                      // original mp3 path user picked
     public string Layout { get; set; } = "horizontal";          // "horizontal" | "vertical"
+    public bool ShowChips { get; set; } = true;
+    public bool ShowLeaderboard { get; set; } = false;
+    public int? LeaderboardId { get; set; }
 }
 
 public static class SettingsStore

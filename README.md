@@ -12,6 +12,11 @@ A tiny **.NET 8 (WPF)** desktop app that hosts a local web overlay for OBS and p
 - Remaining achievements (chips)
 - Toast when you unlock an achievement (+ optional sound)
 - Control Panel: pick any remaining achievement to track, or switch between Auto / Next / Prev
+- **Leaderboards (optional)**  
+  - Toggle in the app: “Show leaderboard”.  
+  - Pick the exact leaderboard you’re grinding from the Control Panel.  
+  - Overlay shows Top 5 and your current rank/score.
+- **Chips visibility (optional)** — Toggle “Show chips” in the app.
 
 **One-click download:**  
 👉 [⬇️ Download for Windows (win-x64)](../../releases/latest/download/RaOverlay-win-x64.zip)

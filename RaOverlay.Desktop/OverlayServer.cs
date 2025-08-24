@@ -100,7 +100,11 @@ namespace RaOverlay.Desktop
                     selectedId = sel?.Id,
                     remaining = s.RemainingList.Select(a => new
                     {
-                        a.Id, a.Title, a.Points, a.Badge, a.Desc
+                        a.Id,
+                        a.Title,
+                        a.Points,
+                        a.Badge,
+                        a.Desc
                     })
                 });
             });
@@ -142,6 +146,40 @@ namespace RaOverlay.Desktop
 
             _app.MapPost("/control/auto", (OverlayState s) => { s.ManualIndex = null; return Results.Ok(); });
 
+            // Control: list leaderboards for current game + selection
+            _app.MapGet("/control/lb-data", (OverlayState s) =>
+            {
+                var selId = s.SelectedLeaderboardId;
+                var cur = s.LeaderboardData is null ? null : new
+                {
+                    id = s.LeaderboardData.Id,
+                    title = s.LeaderboardData.Title,
+                    total = s.LeaderboardData.Total,
+                    me = s.LeaderboardData.Me
+                };
+                return Results.Json(new
+                {
+                    selectedId = selId,
+                    current = cur,
+                    list = s.Leaderboards.Select(l => new { id = l.Id, title = l.Title, rankAsc = l.RankAsc, format = l.Format })
+                });
+            });
+
+            // Control: select leaderboard by id
+            _app.MapPost("/control/lb-select", async (HttpRequest req, OverlayState s, IHubContext<OverlayHub> hub) =>
+            {
+                if (!req.Query.TryGetValue("id", out var idVal) || !int.TryParse(idVal, out var id))
+                    return Results.BadRequest("id missing");
+                if (!s.Leaderboards.Any(l => l.Id == id))
+                    return Results.NotFound("leaderboard not found");
+
+                s.SelectedLeaderboardId = id;
+                // optimistic push: overlay will show after next poll fetches entries
+                await hub.Clients.All.SendAsync("leaderboard", s.LeaderboardData);
+                return Results.Ok();
+            });
+
+
             // Control page (lists all remaining + selectable)
             _app.MapGet("/control", async ctx =>
             {
@@ -176,6 +214,11 @@ namespace RaOverlay.Desktop
   <button id="auto" class="secondary">Auto</button>
   <button id="next">Next</button>
 </div>
+<div class="row">
+  <select id="lbSel"></select>
+  <button id="lbRefresh" class="secondary">Refresh LB</button>
+  <div id="lbMe" class="muted"></div>
+</div>
 <div id="game" class="muted"></div>
 <div class="bar"><i id="prog"></i></div>
 <div id="grid" class="grid"></div>
@@ -187,6 +230,24 @@ async function getData(){
   return await r.json();
 }
 function badgeStyle(url){ return url ? `background-image:url('${url.replace(/'/g,"%27")}')` : '' }
+
+async function getLbData(){ const r = await fetch('/control/lb-data'); return await r.json(); }
+async function renderLb(){
+  const d = await getLbData();
+  const sel = document.getElementById('lbSel');
+  sel.innerHTML = '';
+  for(const l of d.list){ 
+    const o = document.createElement('option');
+    o.value = l.id; o.textContent = l.title; 
+    if(d.selectedId===l.id) o.selected = true;
+    sel.appendChild(o);
+  }
+  const me = d.current?.me;
+  document.getElementById('lbMe').textContent = me ? `You: #${me.rank} • ${me.formattedScore}` : '';
+}
+document.getElementById('lbSel').onchange = (e)=>fetch('/control/lb-select?id='+e.target.value,{method:'POST'}).then(renderLb);
+document.getElementById('lbRefresh').onclick = renderLb;
+renderLb(); setInterval(renderLb, 15000);
 
 let items = [], selectedId = null;
 function render(data){
@@ -255,10 +316,11 @@ setInterval(()=>getData().then(render).catch(()=>{}), 5000);
         public override async Task OnConnectedAsync()
         {
             if (_state.NowPlaying is not null) await Clients.Caller.SendAsync("now-playing", _state.NowPlaying);
-            if (_state.Progress   is not null) await Clients.Caller.SendAsync("progress", _state.Progress);
-            if (_state.Remaining.Count > 0)    await Clients.Caller.SendAsync("remaining", new { remaining = _state.Remaining });
-            if (_state.Next       is not null) await Clients.Caller.SendAsync("next", _state.Next);
+            if (_state.Progress is not null) await Clients.Caller.SendAsync("progress", _state.Progress);
+            if (_state.Remaining.Count > 0) await Clients.Caller.SendAsync("remaining", new { remaining = _state.Remaining });
+            if (_state.Next is not null) await Clients.Caller.SendAsync("next", _state.Next);
             if (_state.RecentToasts.Count > 0) await Clients.Caller.SendAsync("achievement", _state.RecentToasts[^1]);
+            if (_state.LeaderboardData is not null) await Clients.Caller.SendAsync("leaderboard", _state.LeaderboardData);
             await base.OnConnectedAsync();
         }
     }
@@ -279,14 +341,22 @@ setInterval(()=>getData().then(render).catch(()=>{}), 5000);
         public int? ManualIndex { get; set; }                        // null => auto
         public SimpleAch? GetSelected()
             => ManualIndex is int idx && idx >= 0 && idx < RemainingList.Count ? RemainingList[idx] : null;
+        public List<LbSummary> Leaderboards { get; } = new();
+        public int? SelectedLeaderboardId { get; set; }
+        public LbData? LeaderboardData { get; set; }
+
+        public record LbSummary(int Id, string Title, string Description, bool RankAsc, string Format, string? TopUser, string? TopScore);
+        public record LbEntry(int Rank, string User, string FormattedScore, int Score);
+        public record LbData(int Id, string Title, bool RankAsc, string Format, List<LbEntry> Top, LbEntry? Me, int Total);
+
     }
 
     public sealed record RaOptions
     {
-        public string Username   { get; init; } = "";
-        public string WebApiKey  { get; init; } = "";
-        public int    PollSeconds{ get; init; } = 5;
-        public string NextSort   { get; init; } = "list"; // list|first|lowest|highest
+        public string Username { get; init; } = "";
+        public string WebApiKey { get; init; } = "";
+        public int PollSeconds { get; init; } = 5;
+        public string NextSort { get; init; } = "list"; // list|first|lowest|highest
     }
 
     public sealed class RaPollingService : BackgroundService
@@ -302,6 +372,8 @@ setInterval(()=>getData().then(render).catch(()=>{}), 5000);
         private int _currentGameId = 0;
         private GameProgress? _lastProgress;
         private DateTime _lastUnlockUtc = DateTime.MinValue;
+        private DateTime _lastLbListFetchUtc = DateTime.MinValue;
+        private DateTime _lastLbEntriesFetchUtc = DateTime.MinValue;
 
         public RaPollingService(
             ILogger<RaPollingService> log,
@@ -310,11 +382,11 @@ setInterval(()=>getData().then(render).catch(()=>{}), 5000);
             RaOptions opts,
             IHubContext<OverlayHub> hub)
         {
-            _log  = log;
+            _log = log;
             _http = http;
             _state = state;
-            _opts  = opts;
-            _hub   = hub;
+            _opts = opts;
+            _hub = hub;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -366,6 +438,9 @@ setInterval(()=>getData().then(render).catch(()=>{}), 5000);
             var pct = progress.Total > 0 ? (int)Math.Round(progress.Earned / (double)progress.Total * 100) : 0;
             _state.Progress = new { percent = pct, earned = progress.Earned, total = progress.Total };
             await _hub.Clients.All.SendAsync("progress", _state.Progress, ct);
+
+            await FetchLeaderboardsForGame(http, game.GameId, ct);
+            await FetchLeaderboardEntries(http, game.GameId, ct);
 
             // overlay chips + server list
             _state.Remaining.Clear();
@@ -441,10 +516,10 @@ setInterval(()=>getData().then(render).catch(()=>{}), 5000);
             if (list == null || list.Count == 0) return null;
             return (mode?.ToLowerInvariant()) switch
             {
-                "first"   => list.FirstOrDefault(),
-                "lowest"  => list.OrderBy(a => a.Points).FirstOrDefault(),
+                "first" => list.FirstOrDefault(),
+                "lowest" => list.OrderBy(a => a.Points).FirstOrDefault(),
                 "highest" => list.OrderByDescending(a => a.Points).FirstOrDefault(),
-                _         => list.FirstOrDefault(),
+                _ => list.FirstOrDefault(),
             };
         }
 
@@ -457,6 +532,109 @@ setInterval(()=>getData().then(render).catch(()=>{}), 5000);
                 return dt;
             return null;
         }
+
+        // +++ helper: fetch leaderboards for current game
+        private async Task FetchLeaderboardsForGame(HttpClient http, int gameId, CancellationToken ct)
+        {
+            if ((DateTime.UtcNow - _lastLbListFetchUtc) < TimeSpan.FromMinutes(2)) return;
+            var y = Uri.EscapeDataString(_opts.WebApiKey);
+            var url = $"API/API_GetGameLeaderboards.php?i={gameId}&y={y}";
+            var json = await http.GetStringAsync(url, ct);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            var list = new List<OverlayState.LbSummary>();
+            if (root.TryGetProperty("Results", out var results))
+            {
+                foreach (var e in results.EnumerateArray())
+                {
+                    list.Add(new OverlayState.LbSummary(
+                        GetInt(e, "ID", "id"),
+                        GetStr(e, "Title", "title"),
+                        GetStr(e, "Description", "description"),
+                        e.TryGetProperty("RankAsc", out var ra) && ra.GetBoolean(),
+                        GetStr(e, "Format", "format"),
+                        GetStr(e.GetProperty("TopEntry"), "User", "user"),
+                        GetStr(e.GetProperty("TopEntry"), "FormattedScore", "formattedScore")
+                    ));
+                }
+            }
+            _state.Leaderboards.Clear();
+            _state.Leaderboards.AddRange(list);
+            _lastLbListFetchUtc = DateTime.UtcNow;
+        }
+
+        // +++ helper: fetch entries for selected LB (top 5) and your rank
+        private async Task FetchLeaderboardEntries(HttpClient http, int gameId, CancellationToken ct)
+        {
+            if (_state.SelectedLeaderboardId is null) { _state.LeaderboardData = null; return; }
+            if ((DateTime.UtcNow - _lastLbEntriesFetchUtc) < TimeSpan.FromSeconds(30)) return;
+
+            var y = Uri.EscapeDataString(_opts.WebApiKey);
+            var lbId = _state.SelectedLeaderboardId.Value;
+
+            // Top entries
+            var topJson = await http.GetStringAsync($"API/API_GetLeaderboardEntries.php?i={lbId}&y={y}&c=5", ct);
+
+            using var topDoc = JsonDocument.Parse(topJson);
+            var topRoot = topDoc.RootElement;
+
+            var total = GetInt(topRoot, "Total", "total");
+            var top = new List<OverlayState.LbEntry>();
+            if (topRoot.TryGetProperty("Results", out var arr))
+            {
+                foreach (var r in arr.EnumerateArray())
+                {
+                    top.Add(new OverlayState.LbEntry(
+                        GetInt(r, "Rank", "rank"),
+                        GetStr(r, "User", "user"),
+                        GetStr(r, "FormattedScore", "formattedScore"),
+                        GetInt(r, "Score", "score")
+                    ));
+                }
+            }
+
+            // Your entry for this game (if any)
+            OverlayState.LbEntry? me = null;
+            if (!string.IsNullOrWhiteSpace(_opts.Username))
+            {
+                var u = Uri.EscapeDataString(_opts.Username);
+                var mine = await http.GetStringAsync($"API/API_GetUserGameLeaderboards.php?i={gameId}&u={u}&y={y}&c=500", ct);
+                using var mineDoc = JsonDocument.Parse(mine);
+                var mineRoot = mineDoc.RootElement;
+                if (mineRoot.TryGetProperty("Results", out var mineArr))
+                {
+                    foreach (var r in mineArr.EnumerateArray())
+                    {
+                        if (GetInt(r, "ID", "id") == lbId && r.TryGetProperty("UserEntry", out var ue))
+                        {
+                            me = new OverlayState.LbEntry(
+                                GetInt(ue, "Rank", "rank"),
+                                GetStr(ue, "User", "user"),
+                                GetStr(ue, "FormattedScore", "formattedScore"),
+                                GetInt(ue, "Score", "score")
+                            );
+                            break;
+                        }
+                    }
+                }
+            }
+
+            var meta = _state.Leaderboards.FirstOrDefault(x => x.Id == lbId);
+            _state.LeaderboardData = new OverlayState.LbData(
+                lbId,
+                meta?.Title ?? $"Leaderboard {lbId}",
+                meta?.RankAsc ?? true,
+                meta?.Format ?? "",
+                top,
+                me,
+                total
+            );
+
+            await _hub.Clients.All.SendAsync("leaderboard", _state.LeaderboardData, ct);
+            _lastLbEntriesFetchUtc = DateTime.UtcNow;
+        }
+
 
         // ---------- RA API helpers ----------
 
@@ -492,8 +670,8 @@ setInterval(()=>getData().then(render).catch(()=>{}), 5000);
             {
                 list.Add(new RecentGame
                 {
-                    GameId      = GetInt(e, "GameID", "gameId"),
-                    Title       = GetStr(e, "Title", "title"),
+                    GameId = GetInt(e, "GameID", "gameId"),
+                    Title = GetStr(e, "Title", "title"),
                     ConsoleName = GetStr(e, "ConsoleName", "consoleName"),
                     ImageBoxArt = MakeAbsoluteMediaUrl(GetStr(e, "ImageBoxArt", "imageBoxArt"))
                 });
@@ -511,7 +689,7 @@ setInterval(()=>getData().then(render).catch(()=>{}), 5000);
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            var total  = GetInt(root, "NumAchievements", "numAchievements");
+            var total = GetInt(root, "NumAchievements", "numAchievements");
             var earned = GetInt(root, "NumAwardedToUser", "numAwardedToUser");
 
             var remaining = new List<RemainingAchievement>();
@@ -522,13 +700,13 @@ setInterval(()=>getData().then(render).catch(()=>{}), 5000);
                 foreach (var kv in achs.EnumerateObject())
                 {
                     var a = kv.Value;
-                    var id     = GetInt(a, "ID", "id");
-                    var title  = GetStr(a, "Title", "title");
+                    var id = GetInt(a, "ID", "id");
+                    var title = GetStr(a, "Title", "title");
                     var points = GetInt(a, "Points", "points");
                     var badgeNameOrUrl = GetStr(a, "BadgeName", "badgeName", "BadgeURL", "badgeUrl");
                     var badgeUrl = MakeAbsoluteMediaUrl(badgeNameOrUrl);
-                    var desc   = GetStr(a, "Description", "description");
-                    var date  = GetStr(a, "DateEarnedHardcore", "dateEarnedHardcore", "DateEarned", "dateEarned");
+                    var desc = GetStr(a, "Description", "description");
+                    var date = GetStr(a, "DateEarnedHardcore", "dateEarnedHardcore", "DateEarned", "dateEarned");
                     var isEarned = !string.IsNullOrWhiteSpace(date);
 
                     if (isEarned)
@@ -564,12 +742,12 @@ setInterval(()=>getData().then(render).catch(()=>{}), 5000);
 
                 list.Add(new RecentUnlock
                 {
-                    Id      = GetInt(e, "AchievementID", "achievementId"),
-                    Title   = GetStr(e, "Title", "title"),
-                    Points  = GetInt(e, "Points", "points"),
-                    GameId  = GetInt(e, "GameID", "gameId"),
-                    BadgeUrl= badgeUrl,
-                    Date    = GetStr(e, "Date", "date")
+                    Id = GetInt(e, "AchievementID", "achievementId"),
+                    Title = GetStr(e, "Title", "title"),
+                    Points = GetInt(e, "Points", "points"),
+                    GameId = GetInt(e, "GameID", "gameId"),
+                    BadgeUrl = badgeUrl,
+                    Date = GetStr(e, "Date", "date")
                 });
             }
             return list;

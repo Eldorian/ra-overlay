@@ -42,6 +42,8 @@ public partial class MainWindow : System.Windows.Window
         RgbBox.Text = string.IsNullOrWhiteSpace(s.BackgroundRgb) ? "32,34,38" : s.BackgroundRgb;
         SelectCombo(SortBox, s.NextSort);
         SelectCombo(LayoutBox, s.Layout);
+        ShowChipsBox.IsChecked = s.ShowChips;
+        ShowLeaderboardBox.IsChecked = s.ShowLeaderboard;
 
         // Sound
         _soundPath = s.SoundPath ?? "";
@@ -65,6 +67,9 @@ public partial class MainWindow : System.Windows.Window
             BackgroundRgb = (RgbBox?.Text ?? "32,34,38").Trim(),
             NextSort = GetCombo(SortBox) ?? "list",
             Layout = GetCombo(LayoutBox) ?? "horizontal",
+            ShowChips = ShowChipsBox?.IsChecked == true,
+            ShowLeaderboard = ShowLeaderboardBox?.IsChecked == true,
+            LeaderboardId = _settings.LeaderboardId,
 
             SoundPath = _soundPath
         };
@@ -98,6 +103,9 @@ public partial class MainWindow : System.Windows.Window
         var scale = (Scale?.Value ?? 1.00).ToString("0.00");
         var width = (MinWidthBox?.Text ?? "560").Trim();
         var layout = GetCombo(LayoutBox) ?? "horizontal";
+        var showChips = ShowChipsBox?.IsChecked == true;
+        var max = showChips ? (layout == "vertical" ? "40" : "8") : "0";
+        var showLb = ShowLeaderboardBox?.IsChecked == true ? "1" : "0";
 
         var baseUrl = _server?.BaseUrl ?? $"http://localhost:{ReadPort()}";
 
@@ -115,6 +123,8 @@ public partial class MainWindow : System.Windows.Window
         add("scale", scale);
         add("width", width);
         add("layout", layout);
+        add("max", max);
+        add("lb", showLb);
 
         if (UrlBox is not null) UrlBox.Text = $"{baseUrl}/overlay{qs}";
     }
@@ -210,6 +220,16 @@ public partial class MainWindow : System.Windows.Window
 
     private void SelectionChanged_UpdateUrl(object? s, System.Windows.Controls.SelectionChangedEventArgs e)
     { if (_uiReady) { UpdateUrl(); SaveSettings(); } }
+
+    private void Toggle_UpdateUrl(object sender, System.Windows.RoutedEventArgs e) => UpdateUrl();
+
+
+    // for CheckBox.Checked / Unchecked (RoutedEventHandler)
+    private void SelectionChanged_UpdateUrl(object sender, System.Windows.RoutedEventArgs e)
+    {
+        UpdateUrl();
+    }
+
 
     private void SliderChanged_UpdateUrl(object? s, System.Windows.RoutedPropertyChangedEventArgs<double> e)
     { if (_uiReady) { UpdateUrl(); SaveSettings(); } }
