@@ -44,6 +44,7 @@ No extra source setup needed. The GIF is layered automatically by the overlay, c
 http://localhost:4050/overlay?...&gif=1&gifText=1&gifMs=3000&gifUrl=/unlock.gif
 ```
 
+
 **One-click download:**  
 👉 [⬇️ Download for Windows (win-x64)](../../releases/latest/download/RaOverlay-win-x64.zip)
 
