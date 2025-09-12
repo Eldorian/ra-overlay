@@ -24,6 +24,10 @@ public sealed class OverlaySettings
     public bool ShowChips { get; set; } = true;
     public bool ShowLeaderboard { get; set; } = false;
     public int? LeaderboardId { get; set; }
+    public string? GifPath { get; set; }            // original .gif path user picked
+    public bool EnableUnlockGif { get; set; } = false;
+    public bool EnableUnlockText { get; set; } = false;
+    public int GifDurationMs { get; set; } = 3000;  // default 3s
 }
 
 public static class SettingsStore

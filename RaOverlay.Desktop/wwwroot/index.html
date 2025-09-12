@@ -474,6 +474,14 @@
     </div>
   </div>
 
+    <!-- Centered unlock GIF + caption (hidden by default) -->
+  <div id="unlockOverlay" style="position:fixed; inset:0; display:none; align-items:center; justify-content:center; pointer-events:none; z-index:9999;">
+    <div id="unlockInner" style="text-align:center;">
+      <img id="unlockGif" alt="Achievement GIF" style="max-width:min(60vw,600px); max-height:min(60vh,600px); display:block; margin:0 auto; border-radius:12px;" />
+      <div id="unlockCaption" style="margin-top:10px; font-weight:700; font-size:18px; text-shadow:0 2px 8px rgba(0,0,0,.6);"></div>
+    </div>
+  </div>
+
   <!-- preloaded, absolute path for reliability -->
   <audio id="sfx" src="/unlock.mp3" preload="auto"></audio>
 
@@ -492,6 +500,10 @@
     const vwidth = parseInt(q.get('vwidth') || q.get('width') || '240', 10);
     const maxChips = parseInt(q.get('max') || (layout === 'vertical' ? '40' : '8'), 10);
     const showFocus = (q.get('focus') ?? '1') !== '0';  // &focus=0 to hide big card
+    const gifEnabled   = (q.get('gif') || '0') === '1';
+    const gifUrl       = q.get('gifUrl') || '/unlock.gif';
+    const gifMs        = Math.max(500, parseInt(q.get('gifMs') || '3000',10)); // default 3s
+    const gifText      = (q.get('gifText') || '0') === '1'; // show caption under gif
 
     const chipsPanel = document.getElementById('chips');
     if (maxChips <= 0 && chipsPanel) chipsPanel.style.display = 'none';
@@ -595,6 +607,26 @@
       } catch { }
     }
 
+    // --- show/hide unlock GIF + caption ---
+    let gifTimer;
+    function showUnlockGif(titleText) {
+      if (!gifEnabled) return;
+
+      const overlay = document.getElementById('unlockOverlay');
+      const img = document.getElementById('unlockGif');
+      const caption = document.getElementById('unlockCaption');
+
+      img.src = gifUrl;
+      caption.textContent = gifText ? (titleText || 'Achievement unlocked!') : '';
+      overlay.style.display = 'flex';
+
+      clearTimeout(gifTimer);
+      gifTimer = setTimeout(() => {
+        overlay.style.display = 'none';
+        img.src = ''; // free up memory in OBS/browser source
+      }, gifMs);
+    }
+
     let toastTimer;
     function showToast(a) {
       $('#tBadge').style.backgroundImage = a.badge ? `url("${a.badge}")` : 'none';
@@ -605,6 +637,7 @@
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
       playSfx();
+      showUnlockGif(a.title)
     }
 
     function renderLb(d) {

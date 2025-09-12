@@ -10,6 +10,7 @@ public partial class MainWindow : System.Windows.Window
 {
     private OverlayServer? _server;
     private string _soundPath = "";
+    private string _gifPath = "";
     private bool _uiReady;
     private OverlaySettings _settings = new();
 
@@ -49,6 +50,16 @@ public partial class MainWindow : System.Windows.Window
         _soundPath = s.SoundPath ?? "";
         if (!string.IsNullOrEmpty(_soundPath))
             SoundLabel.Text = Path.GetFileName(_soundPath);
+
+        // --- GIF options ---
+        _gifPath = s.GifPath ?? "";
+        if (!string.IsNullOrEmpty(_gifPath))
+            GifLabel.Text = Path.GetFileName(_gifPath);
+
+        EnableGifBox.IsChecked = s.EnableUnlockGif;
+        EnableGifTextBox.IsChecked = s.EnableUnlockText;
+        GifMsBox.Text = (s.GifDurationMs <= 0 ? 3000 : s.GifDurationMs).ToString();
+
     }
 
     private OverlaySettings ReadSettingsFromUi()
@@ -71,7 +82,13 @@ public partial class MainWindow : System.Windows.Window
             ShowLeaderboard = ShowLeaderboardBox?.IsChecked == true,
             LeaderboardId = _settings.LeaderboardId,
 
-            SoundPath = _soundPath
+            SoundPath = _soundPath,
+
+            // --- NEW: GIF options ---
+            GifPath = _gifPath,
+            EnableUnlockGif = EnableGifBox?.IsChecked == true,
+            EnableUnlockText = EnableGifTextBox?.IsChecked == true,
+            GifDurationMs = int.TryParse(GifMsBox?.Text, out var gms) ? gms : 3000,
         };
     }
 
@@ -107,6 +124,11 @@ public partial class MainWindow : System.Windows.Window
         var max = showChips ? (layout == "vertical" ? "40" : "8") : "0";
         var showLb = ShowLeaderboardBox?.IsChecked == true ? "1" : "0";
 
+        // NEW: gif flags pulled from UI
+        var enableGif = EnableGifBox?.IsChecked == true;
+        var enableGifText = EnableGifTextBox?.IsChecked == true;
+        var gifMs = int.TryParse(GifMsBox?.Text, out var ms) ? ms : 3000;
+
         var baseUrl = _server?.BaseUrl ?? $"http://localhost:{ReadPort()}";
 
         var qs = new StringBuilder();
@@ -126,6 +148,12 @@ public partial class MainWindow : System.Windows.Window
         add("max", max);
         add("lb", showLb);
 
+        // --- NEW: pass gif options to overlay ---
+        add("gif", enableGif ? "1" : "0");
+        add("gifText", enableGifText ? "1" : "0");
+        add("gifMs", gifMs.ToString());
+        add("gifUrl", "/unlock.gif");
+
         if (UrlBox is not null) UrlBox.Text = $"{baseUrl}/overlay{qs}";
     }
 
@@ -136,6 +164,7 @@ public partial class MainWindow : System.Windows.Window
         {
             // ensure wwwroot exists + copy sound if chosen
             CopySoundIntoWebRoot();
+            CopyGifIntoWebRoot();
 
             if (_server is not null)
             {
@@ -210,6 +239,29 @@ public partial class MainWindow : System.Windows.Window
             SaveSettings();
         }
     }
+
+
+
+
+    // --- NEW: Choose GIF ---
+    private void GifBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Filter = "GIF Files|*.gif",
+            Title = "Choose unlock GIF"
+        };
+        if (dlg.ShowDialog() == true)
+        {
+            _gifPath = dlg.FileName;
+            if (GifLabel is not null)
+                GifLabel.Text = Path.GetFileName(_gifPath);
+
+            CopyGifIntoWebRoot();
+            SaveSettings();
+        }
+    }
+
 
     // ---------- live URL updates + autosave ----------
     private void TextChanged_UpdateUrl(object? s, System.Windows.Controls.TextChangedEventArgs e)
@@ -299,5 +351,19 @@ public partial class MainWindow : System.Windows.Window
             try { await _server.StopAsync(); await _server.DisposeAsync(); } catch { }
             _server = null;
         }
+    }
+
+
+    // --- NEW: copy chosen GIF to a stable web path ---
+    private void CopyGifIntoWebRoot()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(_gifPath) || !File.Exists(_gifPath)) return;
+            var www = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+            Directory.CreateDirectory(www);
+            File.Copy(_gifPath, Path.Combine(www, "unlock.gif"), overwrite: true);
+        }
+        catch { }
     }
 }

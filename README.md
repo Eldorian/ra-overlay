@@ -18,6 +18,32 @@ A tiny **.NET 8 (WPF)** desktop app that hosts a local web overlay for OBS and p
   - Overlay shows Top 5 and your current rank/score.
 - **Chips visibility (optional)** — Toggle “Show chips” in the app.
 
+# 🎉 Unlock GIF (New Feature)
+
+You can now display an animated GIF and/or the achievement text in the center of your overlay when an achievement unlocks.
+
+## How to enable
+1. Open the desktop app.
+2. In **Overlay Options**, check **Show GIF on unlock**.
+3. (Optional) Check **Show achievement text under GIF** to display the achievement name below the image.
+4. Click **Choose GIF…** to pick a `.gif` file from your computer.  
+   The file is copied into the overlay’s `wwwroot` as `unlock.gif`.
+5. Set the **GIF duration (ms)** to control how long it stays visible (default: 3000 ms).
+
+## In OBS
+No extra source setup needed. The GIF is layered automatically by the overlay, centered on screen, and will play alongside your unlock sound.
+
+## Query string options (advanced)
+- `gif=1` – enable GIF display  
+- `gifText=1` – show achievement text under GIF  
+- `gifMs=3000` – duration in milliseconds  
+- `gifUrl=/unlock.gif` – path served by the overlay  
+
+### Example
+```
+http://localhost:4050/overlay?...&gif=1&gifText=1&gifMs=3000&gifUrl=/unlock.gif
+```
+
 **One-click download:**  
 👉 [⬇️ Download for Windows (win-x64)](../../releases/latest/download/RaOverlay-win-x64.zip)
 
